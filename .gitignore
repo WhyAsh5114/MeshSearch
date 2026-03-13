@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.turbo/
+coverage/
+.env
+.env.local
+*.log
+.next/
+cache/
+artifacts/
+typechain-types/
