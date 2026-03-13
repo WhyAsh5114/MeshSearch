@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": ".",
+    "module": "CommonJS",
+    "moduleResolution": "node"
+  },
+  "include": ["scripts", "test", "hardhat.config.ts", "typechain-types"]
+}
