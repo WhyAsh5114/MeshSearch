@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground: #0c0c0c;
+  --background: #fafafa;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --foreground: #fafafa;
+    --background: #0c0c0c;
+  }
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: system-ui, -apple-system, sans-serif;
+}
