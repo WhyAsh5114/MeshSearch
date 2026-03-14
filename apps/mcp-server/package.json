@@ -11,6 +11,7 @@
     "build": "tsc --project tsconfig.json",
     "dev": "tsx watch src/index.ts",
     "test": "vitest run",
+    "demo": "node demo.mjs",
     "clean": "rm -rf dist",
     "check-types": "tsc --noEmit"
   },

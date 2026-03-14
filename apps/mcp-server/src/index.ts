@@ -166,19 +166,21 @@ else {
       ? String((body as Record<string, unknown>).method)
       : method === 'GET' ? 'SSE listen' : undefined;
 
-    // ── x402 payment gate — only for tools/call ─────────────────────────────
+    // ── x402 payment gate (tools/call only) ────────────────────────────────
+    // Standard x402 enforcement: no payment-signature header → 402 with
+    // PaymentRequired so x402-aware clients can create + retry with payment.
     if (method === 'POST' && rpcMethod === 'tools/call') {
       const x402 = await processX402(req);
       if (x402.type === 'blocked') {
         writeX402Response(res, x402);
-        logRes(method, pathname, x402.status ?? 402, Date.now() - start, red('x402 payment required'));
+        logRes(method, pathname, x402.status ?? 402, Date.now() - start, red('x402 — payment required'));
         return;
       }
       if (x402.settlementHeaders) {
         for (const [k, v] of Object.entries(x402.settlementHeaders)) {
           res.setHeader(k, v);
         }
-        logReq(method, pathname, green('x402 payment verified'));
+        logReq(method, pathname, green('x402 payment verified + settled'));
       }
     }
 
