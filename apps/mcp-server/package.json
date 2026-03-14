@@ -16,16 +16,19 @@
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
+    "@bitgo/sdk-api": "^1.75.4",
+    "@bitgo/sdk-coin-eth": "^25.6.6",
+    "@ensdomains/ensjs": "^4.0.2",
     "@meshsearch/crypto": "workspace:*",
     "@meshsearch/types": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.12.0",
     "@x402/core": "^2.6.0",
     "@x402/evm": "^2.6.0",
+    "bitgo": "^50.27.0",
     "dotenv": "^16.4.0",
     "ethers": "^6.16.0",
     "viem": "^2.47.4",
-    "zod": "^3.24.0",
-    "@ensdomains/ensjs": "^4.0.2"
+    "zod": "^3.24.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
