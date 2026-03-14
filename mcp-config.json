@@ -21,7 +21,17 @@
         "X402_ENABLED": "true",
         "X402_PAY_TO": "0x51944Dd4b0862390b601B3d221978dC8B8f561a9",
         "X402_SEARCH_PRICE": "$0.001",
-        "X402_NETWORK": "eip155:84532"
+        "X402_NETWORK": "eip155:84532",
+        "BITGO_ACCESS_TOKEN": "v2x8c9bc893f3e72fe2c5be8c25e239cedceb18d90628f084a91abf57eb1a5d2e19",
+        "BITGO_WALLET_ID": "69b5a463af8d64faa63ba52a9379c2a2",
+        "BITGO_WALLET_PASSPHRASE": "",
+        "BITGO_ENV": "test",
+        "BITGO_COIN": "hteth",
+        "BITGO_EXPRESS_URL": "http://localhost:3080",
+        "BITGO_WEBHOOK_SECRET": "whab81cc19a00c072d541a48450ee1c37642c5eef73ca9f84429009d342908479f",
+        "RELAY1_BITGO_WALLET_ID": "69b5a473cc67cba04af17e2e6943a71b",
+        "RELAY2_BITGO_WALLET_ID": "69b5a483af8d64faa63bae77d015d00e",
+        "RELAY3_BITGO_WALLET_ID": "69b5a492c3fd3ad477441224af3223b6"
       }
     }
   }
