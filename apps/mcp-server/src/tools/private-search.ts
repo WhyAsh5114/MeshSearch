@@ -41,7 +41,7 @@ export function registerPrivateSearchTool(server: McpServer, config: ServerConfi
       console.error(`\x1b[1m[private_search]\x1b[0m query="${params.query}"`);
       try {
       // 1. Create query commitment (hides the query)
-      const { commitment, salt } = createQueryCommitment(params.query);
+      const { commitment } = createQueryCommitment(params.query);
       log('commitment created');
 
       // 2. Generate real Semaphore ZK proof
@@ -107,24 +107,19 @@ export function registerPrivateSearchTool(server: McpServer, config: ServerConfi
         config.contracts.nullifierRegistry
       );
 
-      // 8. Save encrypted record to Fileverse
-      let storageCid: string | undefined;
-      try {
-        const entry = await saveSearchRecord(
-          {
-            commitment,
-            response: searchResponse,
-            routingId: routingPath.routingId,
-            timestamp: Date.now(),
-          },
-          salt,
-          config.fileverseApiUrl
-        );
-        storageCid = entry.cid;
-        log(`saved to fileverse: ${storageCid}`);
-      } catch {
-        log('fileverse save skipped (non-fatal)');
-      }
+      // 8. Save query to Fileverse (fire-and-forget, no response data)
+      saveSearchRecord(
+        {
+          query: params.query,
+          commitment,
+          routingId: routingPath.routingId,
+          timestamp: Date.now(),
+        },
+        config.fileverseEncryptionKey,
+        config
+      )
+        .then((entry) => log(`saved to fileverse: ${entry.id}`))
+        .catch((err) => log(`fileverse save failed: ${err instanceof Error ? err.message : err}`));
 
       // 9. Return results
       const resultText = searchResponse.results
@@ -137,8 +132,8 @@ export function registerPrivateSearchTool(server: McpServer, config: ServerConfi
         `Result hash: ${resultHash}`,
         `Nullifier: ${nullifier.slice(0, 16)}...`,
         `Routing: ${routingPath.hops.map(h => h.ensName).join(' → ')}`,
-        storageCid ? `Stored: ${storageCid}` : null,
-      ].filter(Boolean).join('\n');
+        `Storage: saving in background`,
+      ].join('\n');
 
       log(`done — returning ${searchResponse.totalResults} results`);
       return {
@@ -158,4 +153,3 @@ export function registerPrivateSearchTool(server: McpServer, config: ServerConfi
     }
   );
 }
-

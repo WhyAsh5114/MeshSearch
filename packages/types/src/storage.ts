@@ -5,10 +5,19 @@
 import type { HexString } from './zk.js';
 import type { SearchRecord } from './search.js';
 
-/** An encrypted storage entry on Fileverse/IPFS */
+export type FileverseStorageProvider = 'fileverse-mcp' | 'legacy-local';
+export type FileverseSyncStatus = 'pending' | 'synced' | 'failed';
+
+/** An encrypted storage entry on Fileverse or the legacy local wrapper. */
 export interface EncryptedEntry {
-  /** IPFS CID of the encrypted document */
-  cid: string;
+  /** Storage identifier (ddocId for Fileverse, CID for the legacy wrapper). */
+  id: string;
+  /** Storage provider used for this entry. */
+  provider: FileverseStorageProvider;
+  /** Shareable Fileverse link, when available. */
+  link?: string;
+  /** Current sync state, when the provider exposes one. */
+  syncStatus?: FileverseSyncStatus;
   /** Encryption metadata */
   encryption: {
     /** Algorithm used */
@@ -26,8 +35,12 @@ export interface EncryptedEntry {
 export interface HistoryEntry {
   /** The search record */
   record: SearchRecord;
-  /** IPFS CID where this was stored */
-  cid: string;
+  /** Storage identifier (ddocId for Fileverse, CID for the legacy wrapper). */
+  id: string;
+  /** Shareable Fileverse link, when available. */
+  link?: string;
+  /** Current sync state, when the provider exposes one. */
+  syncStatus?: FileverseSyncStatus;
   /** Decrypted at timestamp */
   decryptedAt: number;
 }
@@ -36,8 +49,8 @@ export interface HistoryEntry {
 export interface ResearchReport {
   /** Report title */
   title: string;
-  /** List of search record CIDs included */
-  searchCids: string[];
+  /** List of stored search document IDs included in the report. */
+  searchIds: string[];
   /** Compiled summary text */
   summary: string;
   /** Individual search records */
@@ -46,4 +59,8 @@ export interface ResearchReport {
   createdAt: number;
   /** Wallet address of the author */
   author: HexString;
+  /** Shareable Fileverse link, when available. */
+  link?: string;
+  /** Current sync state, when the provider exposes one. */
+  syncStatus?: FileverseSyncStatus;
 }

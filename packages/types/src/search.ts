@@ -44,10 +44,12 @@ export interface SearchResponse {
 
 /** Full search record (commitment + result) for storage */
 export interface SearchRecord {
+  /** Original user query, stored inside the encrypted history payload */
+  query?: string;
   /** Query commitment hash */
   commitment: HexString;
-  /** Search response */
-  response: SearchResponse;
+  /** Search response (omitted when saving query-only history) */
+  response?: SearchResponse;
   /** Routing path used */
   routingId: string;
   /** Timestamp */

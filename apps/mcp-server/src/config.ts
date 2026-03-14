@@ -8,6 +8,8 @@ export interface RelayEndpointConfig {
   ensName?: string;
 }
 
+export type FileverseTransport = 'legacy' | 'mcp';
+
 export interface ServerConfig {
   /** Search backend URL */
   searchBackendUrl: string;
@@ -15,8 +17,18 @@ export interface ServerConfig {
   relayEndpoints: RelayEndpointConfig[];
   /** Backend's compressed secp256k1 public key for query encryption */
   backendPublicKey: string;
-  /** Fileverse API base URL */
+  /** Legacy local Fileverse API base URL */
   fileverseApiUrl: string;
+  /** Remote Fileverse server URL used for MCP-backed document storage */
+  fileverseServerUrl: string;
+  /** Fileverse transport mode */
+  fileverseTransport: FileverseTransport;
+  /** Stable key used to encrypt/decrypt stored history */
+  fileverseEncryptionKey: string;
+  /** Max time to wait for Fileverse sync completion */
+  fileverseSyncTimeoutMs: number;
+  /** Interval between Fileverse sync polls */
+  fileverseSyncPollIntervalMs: number;
   /** RPC URL for Base Sepolia (or local Hardhat) */
   rpcUrl: string;
   /** RPC URL for Ethereum mainnet ENS resolution */
@@ -57,6 +69,9 @@ function parseRelayEndpoints(raw: string): RelayEndpointConfig[] {
 }
 
 export function loadConfig(): ServerConfig {
+  const fileverseServerUrl = env('FILEVERSE_SERVER_URL', '');
+  const defaultFileverseTransport: FileverseTransport = fileverseServerUrl ? 'mcp' : 'legacy';
+
   return {
     searchBackendUrl: env('SEARCH_BACKEND_URL', 'http://localhost:4001'),
     relayEndpoints: parseRelayEndpoints(
@@ -64,6 +79,14 @@ export function loadConfig(): ServerConfig {
     ),
     backendPublicKey: env('BACKEND_PUBLIC_KEY', ''),
     fileverseApiUrl: env('FILEVERSE_API_URL', 'http://localhost:4005'),
+    fileverseServerUrl,
+    fileverseTransport: fileverseTransportEnv(defaultFileverseTransport),
+    fileverseEncryptionKey: env(
+      'FILEVERSE_ENCRYPTION_KEY',
+      env('FILEVERSE_API_KEY', env('SEMAPHORE_SECRET', 'meshsearch-dev-identity-secret'))
+    ),
+    fileverseSyncTimeoutMs: intEnv('FILEVERSE_SYNC_TIMEOUT_MS', 60_000),
+    fileverseSyncPollIntervalMs: intEnv('FILEVERSE_SYNC_POLL_INTERVAL_MS', 3_000),
     rpcUrl: env('RPC_URL', 'http://localhost:8545'),
     ensRpcUrl: env('ENS_RPC_URL', ''),
     semaphoreSecret: env('SEMAPHORE_SECRET', 'meshsearch-dev-identity-secret'),
@@ -78,4 +101,19 @@ export function loadConfig(): ServerConfig {
 
 function env(key: string, fallback: string): string {
   return process.env[key] ?? fallback;
+}
+
+function intEnv(key: string, fallback: number): number {
+  const value = process.env[key];
+  if (!value) return fallback;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function fileverseTransportEnv(fallback: FileverseTransport): FileverseTransport {
+  const value = process.env.FILEVERSE_TRANSPORT;
+  if (value === 'legacy' || value === 'mcp') {
+    return value;
+  }
+  return fallback;
 }

@@ -13,14 +13,14 @@ export function registerGetHistoryTool(server: McpServer, config: ServerConfig) 
     'Get your previous searches.',
     {
       limit: z.number().min(1).max(100).default(10).describe('Number of searches (default 10)'),
-      walletKey: z.string().optional().describe('Wallet key (optional, uses default if not provided)'),
+      walletKey: z.string().optional().describe('Wallet key (optional, uses configured history key if not provided)'),
     },
     async (params) => {
-      const key = params.walletKey ?? config.backendPublicKey;
+      const key = params.walletKey ?? config.fileverseEncryptionKey;
       try {
         const history = await getSearchHistory(
           key,
-          config.fileverseApiUrl,
+          config,
           params.limit
         );
 
@@ -32,14 +32,17 @@ export function registerGetHistoryTool(server: McpServer, config: ServerConfig) 
 
         const entries = history.map((entry, i) => {
           const r = entry.record;
-          const topResults = r.response.results.slice(0, 3)
+          const topResults = r.response?.results.slice(0, 3)
             .map(res => `  - ${res.title}: ${res.url}`)
-            .join('\n');
+            .join('\n') || '  (query-only record)';
 
           return `### ${i + 1}. Search (${new Date(r.timestamp).toISOString()})
+Query: ${r.query ?? '(encrypted)'}
 Commitment: ${r.commitment}
-Results: ${r.response.totalResults}
-CID: ${entry.cid}
+Results: ${r.response?.totalResults ?? 'N/A'}
+Document ID: ${entry.id}
+Sync status: ${entry.syncStatus ?? 'unknown'}
+Link: ${entry.link ?? 'not available'}
 Top results:
 ${topResults}`;
         }).join('\n\n');

@@ -2,26 +2,37 @@
  * Fileverse Storage Service — Encrypted history + report storage on IPFS.
  *
  * Calls the Fileverse Storage V2 REST API to pin encrypted blobs to IPFS.
- * Authentication uses Fileverse's UCAN token system. The /upload/public endpoint
- * works without credentials (for development). A local cache accelerates reads
- * and powers listing endpoints. The service never sees plaintext — only ciphertext.
+ * Supports three auth modes:
+ *   - public: /upload/public
+ *   - apiKey: header-based auth using FILEVERSE_API_KEY
+ *   - ucan: Bearer UCAN token + contract/invoker headers
  *
  * Env vars:
- *   FILEVERSE_STORAGE_URL  — Fileverse Storage V2 API base URL (e.g. https://your-fileverse-instance.com)
- *   FILEVERSE_UCAN_TOKEN   — UCAN Bearer token (enables authenticated /upload/ endpoint)
- *   FILEVERSE_CONTRACT     — Contract address associated with uploads (required with UCAN)
- *   FILEVERSE_INVOKER      — Invoker wallet address (required with UCAN)
- *   FILEVERSE_CHAIN        — Chain ID (required with UCAN, default: 1)
- *   FILEVERSE_GATEWAY      — IPFS gateway base URL for reads (default: https://ipfs.io/ipfs)
- *   PORT                   — HTTP port (default: 4005)
- *   CACHE_DIR              — Local cache directory (default: .fileverse-cache)
+ *   FILEVERSE_STORAGE_URL    — Fileverse Storage V2 API base URL
+ *   FILEVERSE_AUTH_MODE      — public | apiKey | ucan (auto-detected if unset)
+ *   FILEVERSE_API_KEY        — API key for header-based auth
+ *   FILEVERSE_API_KEY_HEADER — Header name for FILEVERSE_API_KEY (default: X-API-Key)
+ *   FILEVERSE_API_KEY_PREFIX — Optional prefix, e.g. "Bearer "
+ *   FILEVERSE_UPLOAD_PATH    — Override upload path
+ *   FILEVERSE_UCAN_TOKEN     — UCAN Bearer token
+ *   FILEVERSE_CONTRACT       — Contract address associated with uploads
+ *   FILEVERSE_INVOKER        — Invoker wallet address
+ *   FILEVERSE_CHAIN          — Chain ID (default: 1)
+ *   FILEVERSE_GATEWAY        — IPFS gateway base URL for reads
+ *   PORT                     — HTTP port (default: 4005)
+ *   CACHE_DIR                — Local cache directory (default: .fileverse-cache)
  */
 
-import 'dotenv/config';
+import { config as loadDotenv } from 'dotenv';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
+
+const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../');
+loadDotenv({ path: resolve(projectRoot, '.env') });
+loadDotenv();
 
 const app = new Hono();
 
@@ -33,18 +44,26 @@ mkdirSync(CACHE_DIR, { recursive: true });
 
 // ─── Fileverse Storage V2 configuration ────────────────────────────────────
 
-const FILEVERSE_STORAGE_URL = process.env.FILEVERSE_STORAGE_URL?.replace(/\/$/, '');
-const FILEVERSE_UCAN_TOKEN  = process.env.FILEVERSE_UCAN_TOKEN;
-const FILEVERSE_CONTRACT    = process.env.FILEVERSE_CONTRACT;
-const FILEVERSE_INVOKER     = process.env.FILEVERSE_INVOKER;
-const FILEVERSE_CHAIN       = process.env.FILEVERSE_CHAIN || '1';
-const FILEVERSE_GATEWAY     = (process.env.FILEVERSE_GATEWAY || 'https://ipfs.io/ipfs').replace(/\/$/, '');
+const FILEVERSE_STORAGE_URL  = process.env.FILEVERSE_STORAGE_URL?.replace(/\/$/, '');
+const FILEVERSE_AUTH_MODE    = process.env.FILEVERSE_AUTH_MODE;
+const FILEVERSE_API_KEY      = process.env.FILEVERSE_API_KEY;
+const FILEVERSE_API_KEY_HEADER = process.env.FILEVERSE_API_KEY_HEADER || 'X-API-Key';
+const FILEVERSE_API_KEY_PREFIX = process.env.FILEVERSE_API_KEY_PREFIX || '';
+const FILEVERSE_UPLOAD_PATH  = process.env.FILEVERSE_UPLOAD_PATH;
+const FILEVERSE_UCAN_TOKEN   = process.env.FILEVERSE_UCAN_TOKEN;
+const FILEVERSE_CONTRACT     = process.env.FILEVERSE_CONTRACT;
+const FILEVERSE_INVOKER      = process.env.FILEVERSE_INVOKER;
+const FILEVERSE_CHAIN        = process.env.FILEVERSE_CHAIN || '1';
+const FILEVERSE_GATEWAY      = (process.env.FILEVERSE_GATEWAY || 'https://ipfs.io/ipfs').replace(/\/$/, '');
 
-// Authenticated mode requires the full set of UCAN credentials.
-const isAuthenticated = !!(FILEVERSE_UCAN_TOKEN && FILEVERSE_CONTRACT && FILEVERSE_INVOKER);
+const hasUcanCredentials = !!(FILEVERSE_UCAN_TOKEN && FILEVERSE_CONTRACT && FILEVERSE_INVOKER);
+const authMode = FILEVERSE_AUTH_MODE
+  ?? (FILEVERSE_API_KEY ? 'apiKey' : hasUcanCredentials ? 'ucan' : 'public');
+const isApiKeyAuth = authMode === 'apiKey' && !!FILEVERSE_API_KEY;
+const isUcanAuth = authMode === 'ucan' && hasUcanCredentials;
 
 if (FILEVERSE_STORAGE_URL) {
-  console.log(`[fileverse] Fileverse Storage API: ${FILEVERSE_STORAGE_URL} (auth: ${isAuthenticated ? 'UCAN' : 'public'})`);
+  console.log(`[fileverse] Fileverse Storage API: ${FILEVERSE_STORAGE_URL} (auth: ${authMode})`);
 } else {
   console.warn('[fileverse] FILEVERSE_STORAGE_URL not set — IPFS pinning disabled, local cache only');
 }
@@ -123,7 +142,7 @@ app.get('/health', (c) => {
     status: 'ok',
     entries: entryCount,
     ipfsEnabled: !!FILEVERSE_STORAGE_URL,
-    auth: FILEVERSE_STORAGE_URL ? (isAuthenticated ? 'ucan' : 'public') : 'disabled',
+    auth: FILEVERSE_STORAGE_URL ? authMode : 'disabled',
     timestamp: Date.now(),
   });
 });
@@ -154,14 +173,16 @@ app.post('/store', async (c) => {
     form.append('sourceApp', 'meshsearch');
     form.append('ipfsType', body.type === 'report' ? 'CONTENT' : 'METADATA');
 
-    const endpoint = isAuthenticated ? `${FILEVERSE_STORAGE_URL}/upload/` : `${FILEVERSE_STORAGE_URL}/upload/public`;
+    const endpoint = `${FILEVERSE_STORAGE_URL}${FILEVERSE_UPLOAD_PATH || (isApiKeyAuth || isUcanAuth ? '/upload/' : '/upload/public')}`;
     const headers: Record<string, string> = {};
 
-    if (isAuthenticated) {
+    if (isUcanAuth) {
       headers['Authorization'] = `Bearer ${FILEVERSE_UCAN_TOKEN}`;
       headers['Contract']      = FILEVERSE_CONTRACT!;
       headers['Invoker']       = FILEVERSE_INVOKER!;
       headers['Chain']         = FILEVERSE_CHAIN;
+    } else if (isApiKeyAuth) {
+      headers[FILEVERSE_API_KEY_HEADER] = `${FILEVERSE_API_KEY_PREFIX}${FILEVERSE_API_KEY}`;
     }
 
     const uploadRes = await fetch(endpoint, { method: 'POST', headers, body: form });
@@ -256,5 +277,5 @@ app.delete('/entry/:cid', async (c) => {
 export { app, CACHE_DIR as DATA_DIR };
 
 serve({ fetch: app.fetch, port: PORT }, () => {
-  console.log(`Fileverse storage service running on port ${PORT} (IPFS: ${FILEVERSE_STORAGE_URL ? 'enabled' : 'disabled'}, auth: ${isAuthenticated ? 'UCAN' : 'public'})`);
+  console.log(`Fileverse storage service running on port ${PORT} (IPFS: ${FILEVERSE_STORAGE_URL ? 'enabled' : 'disabled'}, auth: ${FILEVERSE_STORAGE_URL ? authMode : 'disabled'})`);
 });
