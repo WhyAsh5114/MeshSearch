@@ -13,23 +13,39 @@ Every layer replaces a trusted intermediary with a cryptographic guarantee:
 | Search provider not logging queries | ZK commitment before query leaves device |
 | VPN provider not logging traffic | 3-hop onion routing through ENS-named relays |
 | Payment processor not linking identity | x402 USDC micropayment — wallet signature only |
+| Payment linked to relay operator | BitGo MPC fresh address per disbursement — stealth-address pattern |
 | Cloud storage not reading your history | AES-256-GCM encrypted Fileverse dDocs — only your key decrypts |
 | DNS / PKI not being compromised | ENS L1 resolution for all relay identities |
 
-It's not a demo of one privacy primitive — it's a production-ready system where **five independent prize tracks' technologies work together as a coherent product**.
+It's not a demo of one privacy primitive — it's a production-ready system where **six independent prize tracks' technologies work together as a coherent product**.
+
+The browser UI surfaces every layer in real time: a live **BitGo MPC** status badge in the header, a payment card explaining the stealth-address disbursement before you sign, and a full visualisation of the USDC → Treasury → unique per-relay addresses after every successful search.
 
 ---
 
-## ETHMumbai — Privacy & AI
+## ETHMumbai — Privacy
 
-MeshSearch is built specifically at the intersection of privacy and AI agents. The core thesis: when an AI agent searches the web on your behalf, it creates the same surveillance surface as you searching yourself — unless the protocol is private by construction.
+MeshSearch is private by construction — not by policy. Every layer of the stack replaces a trust assumption with a cryptographic guarantee, so no single party ever sees a user's plaintext query, traffic pattern, or search history.
 
 **How it qualifies:**
 - **ZK query commitment** — Every search is committed with a Semaphore v4 Groth16 proof before leaving the device. The relay network sees only the commitment, never the plaintext query.
 - **Nullifier registry on-chain** — The `NullifierRegistry` contract on Base Sepolia prevents proof replay attacks, giving each search cryptographic uniqueness.
-- **MCP server for AI agents** — Claude, Cursor, or any MCP-compatible agent can call `private_search` and get privacy guarantees that no existing search tool provides.
 - **3-hop onion routing** — Traffic routes through ENS-named relay nodes; no single node knows both the origin and destination.
 - **Encrypted history on Fileverse** — Search results are AES-256-GCM encrypted with the user's wallet key before storage. Not even the storage layer sees plaintext.
+- **No accounts, no emails, no KYC** — A wallet signature is the only identity. x402 USDC micropayments settle on Base Sepolia without linking a user profile to a query.
+
+---
+
+## ETHMumbai — AI
+
+MeshSearch ships as an **MCP server** — the native tool-calling protocol for AI agents. Any MCP-compatible agent (Claude, Cursor, etc.) can call `private_search` and get the full privacy stack automatically, with zero additional integration.
+
+**How it qualifies:**
+- **MCP server for AI agents** — Claude, Cursor, or any MCP-compatible agent can call `private_search` and get privacy guarantees that no existing search tool provides.
+- **Agent-driven payment** — The AI agent's wallet signs a USDC EIP-3009 authorization; the x402 payment settles on Base Sepolia before the query executes. The agent handles the entire payment flow autonomously.
+- **Streaming results with provenance** — Search results stream back to the agent with a `Routing:` field showing the ENS names of the relay operators and a Base Sepolia transaction hash — full auditability inside the chat context.
+- **Encrypted research reports** — The `compile_report` MCP tool aggregates multiple search dDocs into a single encrypted research report stored on Fileverse, letting agents build long-running research workflows with persistent, private memory.
+- **Core thesis** — When an AI agent searches the web on your behalf, it creates the same surveillance surface as you searching yourself — unless the protocol is private by construction. MeshSearch is that protocol.
 
 ---
 
@@ -104,3 +120,38 @@ MeshSearch introduces a **micropayment incentive layer for decentralised search 
 - Payment splits are configurable; operators are identified by ENS name and tracked by `NodeRegistry`
 - This is DeFi applied to a non-financial primitive: instead of yield farming, operators are paid for privacy routing work
 - The x402 protocol (`@x402/core`, `@x402/evm`) handles EIP-3009 authorized transfers — no approve/transfer two-step, no gas paid by the server
+- When BitGo is enabled, disbursement flows through MPC wallets with fresh stealth addresses per relay per search — the on-chain payment trail shows N unique, unlinked addresses, making relay income invisible to chain analysis
+
+---
+
+## BitGo — Privacy-Preserving Wallet Infrastructure
+
+MeshSearch uses BitGo wallets as the disbursement layer for relay operator payments. The integration is live on Holesky testnet with 4 self-custody MPC hot wallets.
+
+**How it qualifies:**
+- **Stealth-address pattern** — for every `private_search`, `generateFreshAddress()` is called on each relay operator's BitGo wallet. Each operator receives funds at a new, unlinkable address. An observer cannot correlate relay1's payment from search A with relay1's payment from search B.
+- **Self-custody MPC hot wallets** — all four wallets (treasury + 3 relay operators) use `walletVersion: 3` on the `hteth` (Holesky ETH) coin. Key material never leaves BitGo MPC; no single point of compromise.
+- **BitGo Express** — local key management via `docker run bitgo/express:latest`. The MCP server communicates with Express at `http://localhost:3080` for transaction signing.
+- **Policy engine** — velocity limits and address whitelists applied server-side via `setupTreasuryPolicies()`. The treasury wallet cannot be drained even if the MCP server is compromised.
+- **Webhooks** — `POST /webhooks/bitgo` handler with HMAC-SHA256 signature validation (`x-signature-sha256` header). Confirmed disbursements create an immutable audit trail.
+- **Live browser UI** — the chat interface shows a pulsing **BitGo MPC** status badge in the header that polls `/health` every 15 seconds. Before payment, a card explains the stealth-address flow. After a successful search, a full disbursement visualisation shows `USDC → Treasury (0x…) → relay1.eth → 0xABC… | relay2.eth → 0xDEF… | relay3.eth → 0x789…` with fingerprint icons marking each fresh address. The actual stealth address generated for the search is shown when available.
+
+**Wallets (Holesky testnet):**
+
+| Wallet | ID prefix | Role |
+|---|---|---|
+| Treasury | `69b5a463…` | Receives x402 payments, disburses to relays |
+| Relay 1 | `69b5a473…` | `relay1.meshsearch.eth` operator |
+| Relay 2 | `69b5a483…` | `relay2.meshsearch.eth` operator |
+| Relay 3 | `69b5a492…` | `relay3.meshsearch.eth` operator |
+
+**Key files:**
+
+| File | Purpose |
+|---|---|
+| `apps/mcp-server/src/bitgo/client.ts` | SDK wrapper, `generateFreshAddress()`, `sendTransaction()`, `isBitGoEnabled()` |
+| `apps/mcp-server/src/bitgo/stealth-disbursement.ts` | Fresh-address fan-out to relay wallets |
+| `apps/mcp-server/src/bitgo/webhooks.ts` | HMAC-validated webhook handler |
+| `apps/mcp-server/src/bitgo/policies.ts` | Velocity limits, address whitelists |
+| `apps/web/src/app/chat/page.tsx` | `useBitGoStatus` hook, `StealthDisbursementCard`, payment card pre-flight info |
+| `apps/web/src/app/api/health/route.ts` | `BitGoHealthInfo` proxy — status, env, coin, walletId, relay count |

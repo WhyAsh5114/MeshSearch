@@ -1,12 +1,12 @@
 # MeshSearch — Private Web Search for AI Agents
 
-> Queries committed with ZK proofs, payments via x402 micropayments, 3-hop onion relay routing, encrypted history on Fileverse. Cryptographic privacy, not promises.
+> Queries committed with ZK proofs, payments via x402 micropayments, 3-hop onion relay routing, stealth-address disbursement via BitGo wallets, encrypted history on Fileverse. Cryptographic privacy, not promises.
 
 ---
 
 ## What It Does
 
-Every web search leaks **who you are** and **what you searched.** MeshSearch removes the need to trust anyone: queries are committed client-side with ZK proofs before they leave your device, payments are anonymous USDC micropayments via x402, traffic routes through 3 ENS-named relay hops, and results are stored encrypted on Fileverse.
+Every web search leaks **who you are** and **what you searched.** MeshSearch removes the need to trust anyone: queries are committed client-side with ZK proofs before they leave your device, payments are anonymous USDC micropayments via x402, traffic routes through 3 ENS-named relay hops, relay operators are paid through fresh unlinkable BitGo wallet addresses per transaction, and results are stored encrypted on Fileverse.
 
 It ships as an **MCP server** — any AI agent (Claude, Cursor, etc.) can use it as a tool.
 
@@ -106,6 +106,35 @@ node demo.mjs "what are zero knowledge proofs"
 
 ---
 
+## BitGo Stealth-Address Payments
+
+MeshSearch integrates [BitGo's wallet infrastructure](https://developers.bitgo.com/) for privacy-preserving payment disbursement. After x402 settles a search payment, BitGo wallets disburse shares to relay operators using **fresh, unlinkable addresses per transaction**.
+
+An on-chain observer cannot link two payments to the same relay operator — each disbursement goes to a unique BitGo-generated address. This is the stealth-address pattern applied to infrastructure payments.
+
+### Enable BitGo
+
+1. Create a test account at [app.bitgo-test.com](https://app.bitgo-test.com/signup)
+2. Run BitGo Express locally: `docker run -p 3080:3080 bitgo/express:latest`
+3. Create wallets and fund from [Holesky faucet](https://holesky-faucet.pk910.de/)
+4. Set env vars:
+
+```env
+BITGO_ACCESS_TOKEN=<your-testnet-token>
+BITGO_WALLET_ID=<treasury-wallet-id>
+BITGO_WALLET_PASSPHRASE=<wallet-passphrase>
+BITGO_ENV=test
+BITGO_COIN=hteth
+BITGO_EXPRESS_URL=http://localhost:3080
+RELAY1_BITGO_WALLET_ID=<relay1-wallet-id>
+RELAY2_BITGO_WALLET_ID=<relay2-wallet-id>
+RELAY3_BITGO_WALLET_ID=<relay3-wallet-id>
+```
+
+BitGo is optional — when not configured, payments fall back to the on-chain `PaymentSplitter` contract. See [ARCHITECTURE.md](ARCHITECTURE.md) for the full technical design.
+
+---
+
 ## MCP Tools
 
 The server exposes three tools:
@@ -138,8 +167,12 @@ pnpm dev   # starts relay nodes, search backend, MCP server, and the web app tog
 - **Connect wallet** — MetaMask or any injected EVM wallet via wagmi
 - **AI-powered search** — streaming chat with any OpenAI-compatible LLM (configure endpoint + model via the gear icon)
 - **x402 payment flow** — one-click Pay & Search button triggers MetaMask USDC signing; payment settles on Base Sepolia before the query is executed
+- **BitGo status badge** — live pulsing indicator in the header shows BitGo MPC wallet connectivity and coin (e.g., HTETH), polling `/health` every 15 seconds
+- **BitGo pre-flight card** — when the payment prompt appears, an emerald info box explains that relay operators will be paid via fresh stealth addresses after settlement
+- **Stealth disbursement visualisation** — after a successful search, a full animated flow shows `USDC → Treasury → relay1 → 0x...(unique) | relay2 → 0x...(unique) | relay3 → 0x...(unique)` with the actual BitGo-generated stealth address when available
 - **Formatted results** — each result rendered as a card with title, clickable URL, snippet, plus a metadata footer showing relay routing path, search time, and result hash
 - **Persistent context** — after a paid search, the LLM retains the results for follow-up questions in the same session without asking for another payment
+- **MCP Inspector** (`/mcp` route) — live debug view of all MCP requests with BitGo status badge, latency stats, and full request/response payloads
 
 ---
 
@@ -259,36 +292,38 @@ pnpm turbo test
 ```
 MeshSearch/
 ├── apps/
-│   ├── mcp-server/        MCP server (HTTP + stdio), x402 gate, ZK verification
+│   ├── mcp-server/        MCP server (HTTP + stdio), x402 gate, ZK verification, BitGo wallets
 │   │   ├── demo.mjs       Interactive x402 demo client (REPL)
 │   │   └── src/
-│   │       ├── tools/     private_search, get_history, compile_report
-│   │       └── middleware/ x402-payment, zk-verification
+│   │       ├── tools/     private_search (ZK + relay + BitGo stealth), get_history, compile_report
+│   │       ├── middleware/ x402-payment (triggers BitGo disbursement), zk-verification
+│   │       └── bitgo/     client, stealth-disbursement, webhooks, policies
 │   ├── relay-node/        3-hop onion routing relay servers (ENS-named)
 │   ├── search-backend/    SearXNG wrapper + result hashing
 │   ├── fileverse/         Encrypted history storage on IPFS via Fileverse
-│   ├── web/               Next.js browser UI — wallet connect, x402 chat, search results
+│   ├── web/               Next.js browser UI — wallet connect, x402 chat, BitGo live status, stealth disbursement viz
 │   └── dashboard/         Next.js UI (relay map, payment viz, history)
 ├── packages/
 │   ├── contracts/         Solidity (NodeRegistry, NullifierRegistry, PaymentSplitter, AccessControl)
 │   ├── crypto/            secp256k1 ECDH, AES-256-GCM, Semaphore ZK proofs
-│   └── types/             Shared TypeScript types
+└──   types/             Shared TypeScript types (incl. BitGoWalletStatus, StealthAddress)
 └── scripts/
-    └── setup.ts           Interactive setup & launcher
+    └── setup.ts           Interactive setup & launcher (incl. BitGo Step 5c)
 ```
 
 ---
 
 ## Tech Stack
 
-| Layer          | Tools                                                              |
+| Layer | Tools |
 | -------------- | ------------------------------------------------------------------ |
-| **ZK**         | Semaphore v4 — Groth16 proofs, Poseidon hashing                    |
-| **Crypto**     | `@noble/curves` secp256k1 ECDH, `@noble/hashes` HKDF + AES-256-GCM |
-| **Payments**   | x402 (`@x402/core`, `@x402/evm`), USDC on Base Sepolia             |
-| **Blockchain** | Solidity, Hardhat, ethers v6                                       |
-| **MCP**        | `@modelcontextprotocol/sdk` — Streamable HTTP + stdio              |
-| **Search**     | SearXNG (self-hosted)                                              |
-| **Storage**    | Content-addressed encrypted file storage                           |
-| **Frontend**   | Next.js, Tailwind                                                  |
-| **Monorepo**   | pnpm workspaces, Turborepo                                         |
+| **ZK** | Semaphore v4 — Groth16 proofs, Poseidon hashing |
+| **Crypto** | `@noble/curves` secp256k1 ECDH, `@noble/hashes` HKDF + AES-256-GCM |
+| **Payments** | x402 (`@x402/core`, `@x402/evm`), USDC on Base Sepolia |
+| **Wallets** | BitGo SDK (`bitgo`, `@bitgo/sdk-api`, `@bitgo/sdk-coin-eth`), self-custody MPC hot wallets, Holesky testnet |
+| **Blockchain** | Solidity, Hardhat, ethers v6 |
+| **MCP** | `@modelcontextprotocol/sdk` — Streamable HTTP + stdio |
+| **Search** | SearXNG (self-hosted) |
+| **Storage** | Content-addressed encrypted file storage |
+| **Frontend** | Next.js, Tailwind, wagmi, shadcn/ui |
+| **Monorepo** | pnpm workspaces, Turborepo |
