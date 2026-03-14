@@ -27,6 +27,8 @@ import { registerGetHistoryTool } from './tools/get-history.js';
 import { registerCompileReportTool } from './tools/compile-report.js';
 import { processX402, writeX402Response } from './middleware/x402-payment.js';
 import { getSearchHistory } from './fileverse/client.js';
+import { handleBitGoWebhook } from './bitgo/webhooks.js';
+import { isBitGoEnabled } from './bitgo/client.js';
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../');
 loadDotenv({ path: resolve(projectRoot, '.env') });
@@ -117,8 +119,28 @@ else {
 
     // ── Health check ────────────────────────────────────────────────────────
     if (pathname === '/health') {
+      const bitgoEnabled = isBitGoEnabled();
+      const bitgoInfo = bitgoEnabled
+        ? {
+            status: 'enabled' as const,
+            env: process.env.BITGO_ENV ?? 'test',
+            coin: process.env.BITGO_COIN ?? 'hteth',
+            walletId: (process.env.BITGO_WALLET_ID ?? '').slice(0, 8) + '…',
+            expressUrl: process.env.BITGO_EXPRESS_URL ?? null,
+            relayWallets: [
+              process.env.RELAY1_BITGO_WALLET_ID,
+              process.env.RELAY2_BITGO_WALLET_ID,
+              process.env.RELAY3_BITGO_WALLET_ID,
+            ].filter(Boolean).length,
+          }
+        : { status: 'disabled' as const };
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ status: 'ok', transport: 'http', sessions: sessions.size }));
+      res.end(JSON.stringify({
+        status: 'ok',
+        transport: 'http',
+        sessions: sessions.size,
+        bitgo: bitgoInfo,
+      }));
       logRes(method, pathname, 200, Date.now() - start, `sessions=${sessions.size}`);
       return;
     }
@@ -159,6 +181,13 @@ else {
     }
 
     if (pathname !== '/mcp') {
+      // ── BitGo webhook endpoint ──────────────────────────────────────────────
+      if (pathname === '/webhooks/bitgo') {
+        await handleBitGoWebhook(req, res);
+        logRes(method, pathname, res.statusCode, Date.now() - start, 'bitgo webhook');
+        return;
+      }
+
       // Catch common mistake: accessing root instead of /mcp
       if (pathname === '/' || pathname === '') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -291,6 +320,7 @@ else {
   httpServer.listen(PORT, HOST, () => {
     console.error(`MeshSearch MCP server (HTTP) listening on http://${HOST}:${PORT}/mcp`);
     console.error(`  Health:          http://${HOST}:${PORT}/health`);
+    console.error(`  BitGo webhooks:  http://${HOST}:${PORT}/webhooks/bitgo${isBitGoEnabled() ? ' (enabled)' : ' (disabled — set BITGO_ACCESS_TOKEN + BITGO_WALLET_ID)'}`);
     console.error(`  For llama.cpp / Tailscale: http://<your-tailscale-ip>:${PORT}/mcp`);
   });
 }
