@@ -1,9 +1,20 @@
 /**
- * Fileverse Storage Service — Encrypted history + report storage.
+ * Fileverse Storage Service — Encrypted history + report storage on IPFS.
  *
- * Persistent file-backed storage using content-addressed CIDs.
- * Entries are SHA-256 hashed for content-addressing (like IPFS).
- * The service never sees plaintext — only encrypted blobs.
+ * Calls the Fileverse Storage V2 REST API to pin encrypted blobs to IPFS.
+ * Authentication uses Fileverse's UCAN token system. The /upload/public endpoint
+ * works without credentials (for development). A local cache accelerates reads
+ * and powers listing endpoints. The service never sees plaintext — only ciphertext.
+ *
+ * Env vars:
+ *   FILEVERSE_STORAGE_URL  — Fileverse Storage V2 API base URL (e.g. https://your-fileverse-instance.com)
+ *   FILEVERSE_UCAN_TOKEN   — UCAN Bearer token (enables authenticated /upload/ endpoint)
+ *   FILEVERSE_CONTRACT     — Contract address associated with uploads (required with UCAN)
+ *   FILEVERSE_INVOKER      — Invoker wallet address (required with UCAN)
+ *   FILEVERSE_CHAIN        — Chain ID (required with UCAN, default: 1)
+ *   FILEVERSE_GATEWAY      — IPFS gateway base URL for reads (default: https://ipfs.io/ipfs)
+ *   PORT                   — HTTP port (default: 4005)
+ *   CACHE_DIR              — Local cache directory (default: .fileverse-cache)
  */
 
 import 'dotenv/config';
@@ -11,16 +22,34 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, readdir
 import { join } from 'node:path';
 import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
-import { sha256 } from '@noble/hashes/sha256';
-import { bytesToHex, randomBytes } from '@noble/hashes/utils';
 
 const app = new Hono();
 
 const PORT = parseInt(process.env.PORT || '4005', 10);
-const DATA_DIR = process.env.DATA_DIR || join(process.cwd(), '.fileverse-data');
+const CACHE_DIR = process.env.CACHE_DIR || join(process.cwd(), '.fileverse-cache');
 
-// Ensure data directory exists
-mkdirSync(DATA_DIR, { recursive: true });
+// Ensure cache directory exists
+mkdirSync(CACHE_DIR, { recursive: true });
+
+// ─── Fileverse Storage V2 configuration ────────────────────────────────────
+
+const FILEVERSE_STORAGE_URL = process.env.FILEVERSE_STORAGE_URL?.replace(/\/$/, '');
+const FILEVERSE_UCAN_TOKEN  = process.env.FILEVERSE_UCAN_TOKEN;
+const FILEVERSE_CONTRACT    = process.env.FILEVERSE_CONTRACT;
+const FILEVERSE_INVOKER     = process.env.FILEVERSE_INVOKER;
+const FILEVERSE_CHAIN       = process.env.FILEVERSE_CHAIN || '1';
+const FILEVERSE_GATEWAY     = (process.env.FILEVERSE_GATEWAY || 'https://ipfs.io/ipfs').replace(/\/$/, '');
+
+// Authenticated mode requires the full set of UCAN credentials.
+const isAuthenticated = !!(FILEVERSE_UCAN_TOKEN && FILEVERSE_CONTRACT && FILEVERSE_INVOKER);
+
+if (FILEVERSE_STORAGE_URL) {
+  console.log(`[fileverse] Fileverse Storage API: ${FILEVERSE_STORAGE_URL} (auth: ${isAuthenticated ? 'UCAN' : 'public'})`);
+} else {
+  console.warn('[fileverse] FILEVERSE_STORAGE_URL not set — IPFS pinning disabled, local cache only');
+}
+
+// ─── Types ──────────────────────────────────────────────────────────────────
 
 interface StoredEntry {
   cid: string;
@@ -30,35 +59,33 @@ interface StoredEntry {
   storedAt: number;
 }
 
-/** Content-addressed CID from sha256 of ciphertext */
-function computeCid(ciphertext: string): string {
-  const hash = sha256(new TextEncoder().encode(ciphertext));
-  return `bafk${bytesToHex(hash).slice(0, 32)}`;
+// ─── Local cache layer (mirrors IPFS for fast reads + listing) ──────────────
+
+function safeCid(cid: string): string {
+  return cid.replace(/[^a-zA-Z0-9]/g, '');
 }
 
 function entryPath(cid: string): string {
-  // Sanitize CID to prevent path traversal
-  const safeCid = cid.replace(/[^a-zA-Z0-9]/g, '');
-  return join(DATA_DIR, `${safeCid}.json`);
+  return join(CACHE_DIR, `${safeCid(cid)}.json`);
 }
 
-function readEntry(cid: string): StoredEntry | null {
+function cacheRead(cid: string): StoredEntry | null {
   const path = entryPath(cid);
   if (!existsSync(path)) return null;
   return JSON.parse(readFileSync(path, 'utf-8')) as StoredEntry;
 }
 
-function writeEntry(entry: StoredEntry): void {
+function cacheWrite(entry: StoredEntry): void {
   writeFileSync(entryPath(entry.cid), JSON.stringify(entry), 'utf-8');
 }
 
-function listEntries(): StoredEntry[] {
-  if (!existsSync(DATA_DIR)) return [];
-  return readdirSync(DATA_DIR)
+function cacheList(): StoredEntry[] {
+  if (!existsSync(CACHE_DIR)) return [];
+  return readdirSync(CACHE_DIR)
     .filter(f => f.endsWith('.json'))
     .map(f => {
       try {
-        return JSON.parse(readFileSync(join(DATA_DIR, f), 'utf-8')) as StoredEntry;
+        return JSON.parse(readFileSync(join(CACHE_DIR, f), 'utf-8')) as StoredEntry;
       } catch {
         return null;
       }
@@ -66,13 +93,42 @@ function listEntries(): StoredEntry[] {
     .filter((e): e is StoredEntry => e !== null);
 }
 
+// ─── IPFS retrieval via configurable gateway ────────────────────────────────
+
+async function ipfsGet(cid: string): Promise<StoredEntry | null> {
+  if (!FILEVERSE_STORAGE_URL) return null;
+  try {
+    const res = await fetch(`${FILEVERSE_GATEWAY}/${cid}`);
+    if (!res.ok) return null;
+    const data = await res.json() as StoredEntry;
+    if (data && data.ciphertext) {
+      const entry: StoredEntry = { ...data, cid };
+      cacheWrite(entry);
+      return entry;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// ─── Routes ─────────────────────────────────────────────────────────────────
+
 // Health check
 app.get('/health', (c) => {
-  const entryCount = existsSync(DATA_DIR) ? readdirSync(DATA_DIR).filter(f => f.endsWith('.json')).length : 0;
-  return c.json({ status: 'ok', entries: entryCount, timestamp: Date.now() });
+  const entryCount = existsSync(CACHE_DIR)
+    ? readdirSync(CACHE_DIR).filter(f => f.endsWith('.json')).length
+    : 0;
+  return c.json({
+    status: 'ok',
+    entries: entryCount,
+    ipfsEnabled: !!FILEVERSE_STORAGE_URL,
+    auth: FILEVERSE_STORAGE_URL ? (isAuthenticated ? 'ucan' : 'public') : 'disabled',
+    timestamp: Date.now(),
+  });
 });
 
-// Store an encrypted entry
+// Store an encrypted entry → pin to Fileverse IPFS, cache locally
 app.post('/store', async (c) => {
   const body = await c.req.json<{ ciphertext: string; iv: string; type?: string }>();
 
@@ -80,26 +136,67 @@ app.post('/store', async (c) => {
     return c.json({ error: 'Missing ciphertext or iv' }, 400);
   }
 
-  // Content-addressed CID (deterministic from content)
-  const cid = computeCid(body.ciphertext);
-
-  const entry: StoredEntry = {
-    cid,
+  const storedAt = Date.now();
+  const payload = {
     ciphertext: body.ciphertext,
     iv: body.iv,
     type: body.type,
-    storedAt: Date.now(),
+    storedAt,
   };
 
-  writeEntry(entry);
+  let cid: string;
 
-  return c.json({ cid, storedAt: entry.storedAt });
+  if (FILEVERSE_STORAGE_URL) {
+    // Upload to Fileverse Storage V2 API as multipart form data
+    const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+    const form = new FormData();
+    form.append('file', blob, 'entry.json');
+    form.append('sourceApp', 'meshsearch');
+    form.append('ipfsType', body.type === 'report' ? 'CONTENT' : 'METADATA');
+
+    const endpoint = isAuthenticated ? `${FILEVERSE_STORAGE_URL}/upload/` : `${FILEVERSE_STORAGE_URL}/upload/public`;
+    const headers: Record<string, string> = {};
+
+    if (isAuthenticated) {
+      headers['Authorization'] = `Bearer ${FILEVERSE_UCAN_TOKEN}`;
+      headers['Contract']      = FILEVERSE_CONTRACT!;
+      headers['Invoker']       = FILEVERSE_INVOKER!;
+      headers['Chain']         = FILEVERSE_CHAIN;
+    }
+
+    const uploadRes = await fetch(endpoint, { method: 'POST', headers, body: form });
+    if (!uploadRes.ok) {
+      const errText = await uploadRes.text();
+      return c.json({ error: `Fileverse upload failed: ${errText}` }, 502);
+    }
+    const uploadData = await uploadRes.json() as { ipfsHash: string };
+    cid = uploadData.ipfsHash;
+  } else {
+    // Local-only: derive CID from content hash (development mode)
+    const { sha256 } = await import('@noble/hashes/sha256');
+    const { bytesToHex } = await import('@noble/hashes/utils');
+    const hash = sha256(new TextEncoder().encode(body.ciphertext));
+    cid = `bafk${bytesToHex(hash).slice(0, 32)}`;
+  }
+
+  // Cache locally for fast reads
+  const entry: StoredEntry = { cid, ...payload };
+  cacheWrite(entry);
+
+  return c.json({ cid, storedAt, ipfsPinned: !!FILEVERSE_STORAGE_URL });
 });
 
-// Retrieve a specific entry by CID
-app.get('/entry/:cid', (c) => {
+// Retrieve a specific entry by CID — cache first, then IPFS gateway
+app.get('/entry/:cid', async (c) => {
   const cid = c.req.param('cid');
-  const entry = readEntry(cid);
+
+  // Try local cache first
+  let entry = cacheRead(cid);
+
+  // Fall back to IPFS gateway
+  if (!entry) {
+    entry = await ipfsGet(cid);
+  }
 
   if (!entry) {
     return c.json({ error: 'Entry not found' }, 404);
@@ -115,7 +212,7 @@ app.get('/entry/:cid', (c) => {
 // List history entries (most recent first)
 app.get('/history', (c) => {
   const limit = parseInt(c.req.query('limit') || '10', 10);
-  const entries = listEntries()
+  const entries = cacheList()
     .filter(e => e.type !== 'report')
     .sort((a, b) => b.storedAt - a.storedAt)
     .slice(0, limit)
@@ -130,7 +227,7 @@ app.get('/history', (c) => {
 
 // List reports
 app.get('/reports', (c) => {
-  const entries = listEntries()
+  const entries = cacheList()
     .filter(e => e.type === 'report')
     .sort((a, b) => b.storedAt - a.storedAt)
     .map(e => ({
@@ -142,20 +239,22 @@ app.get('/reports', (c) => {
   return c.json(entries);
 });
 
-// Delete an entry (owner action only in production)
-app.delete('/entry/:cid', (c) => {
+// Delete an entry — remove from local cache (Fileverse Storage V2 has no unpin API)
+app.delete('/entry/:cid', async (c) => {
   const cid = c.req.param('cid');
   const path = entryPath(cid);
+
   if (!existsSync(path)) {
     return c.json({ error: 'Entry not found' }, 404);
   }
+
   unlinkSync(path);
   return c.json({ deleted: true });
 });
 
 // Export for testing
-export { app, DATA_DIR };
+export { app, CACHE_DIR as DATA_DIR };
 
 serve({ fetch: app.fetch, port: PORT }, () => {
-  console.log(`Fileverse storage service running on port ${PORT}`);
+  console.log(`Fileverse storage service running on port ${PORT} (IPFS: ${FILEVERSE_STORAGE_URL ? 'enabled' : 'disabled'}, auth: ${isAuthenticated ? 'UCAN' : 'public'})`);
 });

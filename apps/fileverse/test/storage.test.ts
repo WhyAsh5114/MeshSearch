@@ -3,7 +3,7 @@ import { existsSync, readdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { app, DATA_DIR } from '../src/index.js';
 
-/** Remove all .json files in DATA_DIR for test isolation */
+/** Remove all .json files in cache dir for test isolation */
 function cleanDataDir() {
   if (!existsSync(DATA_DIR)) return;
   for (const f of readdirSync(DATA_DIR).filter(f => f.endsWith('.json'))) {
