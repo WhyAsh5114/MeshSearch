@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { addMcpTrace, parseSearchMetadata } from "@/lib/mcp-trace";
 
 const MCP_URL = process.env.MCP_URL || "http://localhost:3038";
 
@@ -9,6 +10,8 @@ let reqId = 100;
 
 async function ensureSession(): Promise<string> {
   if (sessionId) return sessionId;
+
+  const initStartedAt = Date.now();
 
   const res = await fetch(`${MCP_URL}/mcp`, {
     method: "POST",
@@ -28,8 +31,46 @@ async function ensureSession(): Promise<string> {
     }),
   });
 
+  addMcpTrace({
+    method: "initialize",
+    route: "/mcp",
+    requestId: 1,
+    hasPaymentSignature: false,
+    statusCode: res.status,
+    latencyMs: Date.now() - initStartedAt,
+    responseContentType: res.headers.get("content-type") || undefined,
+    outcome: res.ok ? "success" : "error",
+    requestHeaders: {
+      "content-type": "application/json",
+      accept: "application/json, text/event-stream",
+    },
+    requestPayload: {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {
+        protocolVersion: "2025-03-26",
+        clientInfo: { name: "meshsearch-web", version: "0.1.0" },
+      },
+    },
+    responseSummary: { hasSessionHeader: Boolean(res.headers.get("mcp-session-id")) },
+  });
+
   const sid = res.headers.get("mcp-session-id");
-  if (!sid) throw new Error("Failed to initialize MCP session");
+  if (!sid) {
+    addMcpTrace({
+      method: "initialize",
+      route: "/mcp",
+      requestId: 1,
+      hasPaymentSignature: false,
+      statusCode: res.status,
+      outcome: "error",
+      error: "Failed to initialize MCP session: missing mcp-session-id header",
+    });
+    throw new Error("Failed to initialize MCP session");
+  }
+
+  const notifyStartedAt = Date.now();
 
   await fetch(`${MCP_URL}/mcp`, {
     method: "POST",
@@ -42,6 +83,24 @@ async function ensureSession(): Promise<string> {
       jsonrpc: "2.0",
       method: "notifications/initialized",
     }),
+  });
+
+  addMcpTrace({
+    method: "notifications/initialized",
+    route: "/mcp",
+    sessionId: sid,
+    hasPaymentSignature: false,
+    latencyMs: Date.now() - notifyStartedAt,
+    outcome: "success",
+    requestHeaders: {
+      "content-type": "application/json",
+      accept: "application/json, text/event-stream",
+      "mcp-session-id": sid.slice(0, 8) + "...",
+    },
+    requestPayload: {
+      jsonrpc: "2.0",
+      method: "notifications/initialized",
+    },
   });
 
   sessionId = sid;
@@ -92,6 +151,7 @@ export async function executeSearch({
 }): Promise<PrivateSearchResult> {
   const sid = await ensureSession();
   const id = ++reqId;
+  const startedAt = Date.now();
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -116,11 +176,65 @@ export async function executeSearch({
 
   if (res.status === 402) {
     const paymentRequired = res.headers.get("payment-required") || "";
+    addMcpTrace({
+      method: "tools/call",
+      route: "/mcp",
+      requestId: id,
+      sessionId: sid,
+      toolName: "private_search",
+      query,
+      hasPaymentSignature: Boolean(paymentSignature),
+      statusCode: 402,
+      latencyMs: Date.now() - startedAt,
+      responseContentType: res.headers.get("content-type") || undefined,
+      outcome: "payment-required",
+      paymentRequiredHeaderPresent: Boolean(paymentRequired),
+      requestHeaders: {
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
+        "mcp-session-id": sid.slice(0, 8) + "...",
+        "payment-signature": paymentSignature ? "present" : "absent",
+      },
+      requestPayload: {
+        jsonrpc: "2.0",
+        id,
+        method: "tools/call",
+        params: { name: "private_search", arguments: { query } },
+      },
+      responseSummary: { paymentRequiredHeaderPresent: Boolean(paymentRequired) },
+    });
     return { status: "payment-required" as const, query, paymentRequired };
   }
 
   if (res.status !== 200) {
     const body = await res.text();
+    addMcpTrace({
+      method: "tools/call",
+      route: "/mcp",
+      requestId: id,
+      sessionId: sid,
+      toolName: "private_search",
+      query,
+      hasPaymentSignature: Boolean(paymentSignature),
+      statusCode: res.status,
+      latencyMs: Date.now() - startedAt,
+      responseContentType: res.headers.get("content-type") || undefined,
+      outcome: "error",
+      error: body.slice(0, 300),
+      requestHeaders: {
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
+        "mcp-session-id": sid.slice(0, 8) + "...",
+        "payment-signature": paymentSignature ? "present" : "absent",
+      },
+      requestPayload: {
+        jsonrpc: "2.0",
+        id,
+        method: "tools/call",
+        params: { name: "private_search", arguments: { query } },
+      },
+      responseSummary: { bodyPreview: body.slice(0, 200) },
+    });
     return {
       status: "error" as const,
       error: `Server returned ${res.status}: ${body.slice(0, 300)}`,
@@ -143,6 +257,37 @@ export async function executeSearch({
     msgs as Array<{ result?: { content?: Array<{ text?: string }> } }>
   ).find((m) => m.result)?.result;
   const text = result?.content?.[0]?.text || "No results found.";
+  const metadata = parseSearchMetadata(text);
+
+  addMcpTrace({
+    method: "tools/call",
+    route: "/mcp",
+    requestId: id,
+    sessionId: sid,
+    toolName: "private_search",
+    query,
+    hasPaymentSignature: Boolean(paymentSignature),
+    statusCode: 200,
+    latencyMs: Date.now() - startedAt,
+    responseContentType: res.headers.get("content-type") || undefined,
+    outcome: "success",
+    metadata,
+    resultPreview: text.slice(0, 220),
+    txHash,
+    requestHeaders: {
+      "content-type": "application/json",
+      accept: "application/json, text/event-stream",
+      "mcp-session-id": sid.slice(0, 8) + "...",
+      "payment-signature": paymentSignature ? "present" : "absent",
+    },
+    requestPayload: {
+      jsonrpc: "2.0",
+      id,
+      method: "tools/call",
+      params: { name: "private_search", arguments: { query } },
+    },
+    responseSummary: { messagesReceived: msgs.length, txHash },
+  });
 
   return {
     status: "success" as const,
