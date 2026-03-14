@@ -1,5 +1,10 @@
 import { tool } from "ai";
 import { z } from "zod";
+import {
+  addMcpTrace,
+  parseSearchMetadata,
+  type McpTraceOutcome,
+} from "./mcp-trace";
 
 const MCP_URL = process.env.MCP_URL || "http://localhost:3038";
 
@@ -114,6 +119,8 @@ async function executeSearchAttempt(
     headers["payment-signature"] = paymentSignature;
   }
 
+  const t0 = Date.now();
+
   const res = await fetch(`${MCP_URL}/mcp`, {
     method: "POST",
     headers,
@@ -125,8 +132,23 @@ async function executeSearchAttempt(
     }),
   });
 
+  const latencyMs = Date.now() - t0;
+
   if (res.status === 402) {
     const paymentRequired = res.headers.get("payment-required") || "";
+    addMcpTrace({
+      method: "tools/call",
+      route: "private_search",
+      requestId: id,
+      sessionId: sid,
+      toolName: "private_search",
+      query,
+      hasPaymentSignature: !!paymentSignature,
+      statusCode: 402,
+      latencyMs,
+      outcome: "payment-required",
+      paymentRequiredHeaderPresent: !!paymentRequired,
+    });
     return { status: "payment-required" as const, query, paymentRequired };
   }
 
@@ -137,6 +159,19 @@ async function executeSearchAttempt(
       resetSession();
       return executeSearchAttempt({ query, paymentSignature }, true);
     }
+    addMcpTrace({
+      method: "tools/call",
+      route: "private_search",
+      requestId: id,
+      sessionId: sid,
+      toolName: "private_search",
+      query,
+      hasPaymentSignature: !!paymentSignature,
+      statusCode: res.status,
+      latencyMs,
+      outcome: "error",
+      error: body.slice(0, 300),
+    });
     return {
       status: "error" as const,
       error: `Server returned ${res.status}: ${body.slice(0, 300)}`,
@@ -159,6 +194,25 @@ async function executeSearchAttempt(
     msgs as Array<{ result?: { content?: Array<{ text?: string }> } }>
   ).find((m) => m.result)?.result;
   const text = result?.content?.[0]?.text || "No results found.";
+
+  addMcpTrace({
+    method: "tools/call",
+    route: "private_search",
+    requestId: id,
+    sessionId: sid,
+    toolName: "private_search",
+    query,
+    hasPaymentSignature: !!paymentSignature,
+    statusCode: 200,
+    latencyMs,
+    responseContentType: res.headers.get("content-type") || undefined,
+    outcome: "success",
+    resultPreview: text.slice(0, 200),
+    txHash,
+    metadata: parseSearchMetadata(text),
+    requestHeaders: { ...headers },
+    responseSummary: { contentLength: text.length, txHash },
+  });
 
   return {
     status: "success" as const,
