@@ -454,7 +454,7 @@ async function callFileverseTool<TResult>(
 
 function buildReportSummary(searches: SearchRecord[]): string {
   return searches
-    .flatMap(search => search.response.results)
+    .flatMap(search => search.response?.results ?? [])
     .map(result => `- [${result.title}](${result.url}): ${result.snippet}`)
     .join('\n');
 }

@@ -48,6 +48,10 @@ async function ensureSession(): Promise<string> {
   return sid;
 }
 
+function resetSession() {
+  sessionId = null;
+}
+
 function parseSSE(text: string) {
   const messages: unknown[] = [];
   for (const block of text.split("\n\n")) {
@@ -90,6 +94,13 @@ export async function executeSearch({
   query: string;
   paymentSignature?: string;
 }): Promise<PrivateSearchResult> {
+  return executeSearchAttempt({ query, paymentSignature });
+}
+
+async function executeSearchAttempt(
+  { query, paymentSignature }: { query: string; paymentSignature?: string },
+  retried = false,
+): Promise<PrivateSearchResult> {
   const sid = await ensureSession();
   const id = ++reqId;
 
@@ -121,6 +132,11 @@ export async function executeSearch({
 
   if (res.status !== 200) {
     const body = await res.text();
+    // Retry once with a fresh session on stale-session errors
+    if (!retried && res.status === 400 && body.includes('Unknown session')) {
+      resetSession();
+      return executeSearchAttempt({ query, paymentSignature }, true);
+    }
     return {
       status: "error" as const,
       error: `Server returned ${res.status}: ${body.slice(0, 300)}`,

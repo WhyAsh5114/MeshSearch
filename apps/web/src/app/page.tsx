@@ -50,7 +50,7 @@ type SearchHistoryEntry = {
     commitment: string;
     routingId: string;
     timestamp: number;
-    response: {
+    response?: {
       totalResults: number;
       searchTimeMs: number;
       results: Array<{
@@ -77,6 +77,7 @@ export default function Home() {
   const [historyEntries, setHistoryEntries] = useState<SearchHistoryEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [historySaveStatus, setHistorySaveStatus] = useState<"idle" | "saving" | "saved" | "failed">("idle");
 
   const { messages, sendMessage, addToolOutput, status } =
     useChat<ChatMessage>({
@@ -148,8 +149,30 @@ export default function Home() {
 
   const handleSearchComplete = useCallback((query: string, results: string) => {
     searchResultsRef.current = { query, results };
-    void loadHistory({ silent: true });
-  }, [loadHistory]);
+    setHistorySaveStatus("saving");
+    // Poll history until the new entry appears (fileverse save runs in background)
+    let attempts = 0;
+    const prevCount = historyEntries.length;
+    const poll = async () => {
+      while (attempts < 20) {
+        attempts++;
+        await new Promise((r) => setTimeout(r, 2000));
+        try {
+          const res = await fetch("/api/history?limit=20", { cache: "no-store" });
+          const body = await res.json() as { entries?: SearchHistoryEntry[] };
+          const entries = body.entries || [];
+          if (entries.length > prevCount) {
+            setHistoryEntries(entries);
+            setHistorySaveStatus("saved");
+            return;
+          }
+        } catch {}
+      }
+      // Timed out — save likely failed
+      setHistorySaveStatus("failed");
+    };
+    void poll();
+  }, [loadHistory, historyEntries.length]);
 
   return (
     <div className="flex flex-col h-screen">
@@ -277,6 +300,7 @@ export default function Home() {
                           part={part}
                           addToolOutput={addToolOutput}
                           isConnected={isConnected}
+                          historySaveStatus={historySaveStatus}
                           onConnect={() =>
                             connect({ connector: connectors[0] })
                           }
@@ -378,12 +402,14 @@ function ToolResultCard({
   part,
   addToolOutput,
   isConnected,
+  historySaveStatus,
   onConnect,
   onSearchComplete,
 }: {
   part: PrivateSearchPart;
   addToolOutput: AddToolOutputFn;
   isConnected: boolean;
+  historySaveStatus: "idle" | "saving" | "saved" | "failed";
   onConnect: () => void;
   onSearchComplete?: (query: string, results: string) => void;
 }) {
@@ -477,6 +503,21 @@ function ToolResultCard({
           <Badge variant="secondary" className="text-[10px] gap-1">
             <Zap className="h-2.5 w-2.5" /> USDC Settled
           </Badge>
+          {historySaveStatus === "saving" && (
+            <Badge variant="outline" className="text-[10px] gap-1 animate-pulse">
+              <Loader2 className="h-2.5 w-2.5 animate-spin" /> Saving to history...
+            </Badge>
+          )}
+          {historySaveStatus === "saved" && (
+            <Badge variant="outline" className="text-[10px] gap-1 text-green-500 border-green-500/30">
+              <CheckCircle2 className="h-2.5 w-2.5" /> Saved to history
+            </Badge>
+          )}
+          {historySaveStatus === "failed" && (
+            <Badge variant="outline" className="text-[10px] gap-1 text-destructive border-destructive/30">
+              <AlertCircle className="h-2.5 w-2.5" /> History save failed
+            </Badge>
+          )}
         </div>
 
         {/* Parsed search results */}
@@ -714,7 +755,7 @@ function HistoryPanel({
 
             {!loading && !error && entries.map((entry) => {
               const query = entry.record.query?.trim() || "Private search";
-              const topResult = entry.record.response.results[0];
+              const topResult = entry.record.response?.results[0];
               return (
                 <div
                   key={entry.id}
@@ -733,10 +774,12 @@ function HistoryPanel({
                         <Clock className="h-3 w-3" />
                         {new Date(entry.record.timestamp).toLocaleString()}
                       </span>
-                      <span className="flex items-center gap-1">
-                        <Search className="h-3 w-3" />
-                        {entry.record.response.totalResults} results
-                      </span>
+                      {entry.record.response && (
+                        <span className="flex items-center gap-1">
+                          <Search className="h-3 w-3" />
+                          {entry.record.response.totalResults} results
+                        </span>
+                      )}
                     </div>
                   </div>
 

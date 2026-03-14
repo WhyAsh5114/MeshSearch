@@ -48,8 +48,8 @@ export interface SearchRecord {
   query?: string;
   /** Query commitment hash */
   commitment: HexString;
-  /** Search response */
-  response: SearchResponse;
+  /** Search response (omitted when saving query-only history) */
+  response?: SearchResponse;
   /** Routing path used */
   routingId: string;
   /** Timestamp */

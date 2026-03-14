@@ -107,29 +107,19 @@ export function registerPrivateSearchTool(server: McpServer, config: ServerConfi
         config.contracts.nullifierRegistry
       );
 
-      // 8. Save encrypted record to Fileverse
-      let storedEntryId: string | undefined;
-      let storedEntryLink: string | undefined;
-      let storedEntryStatus: string | undefined;
-      try {
-        const entry = await saveSearchRecord(
-          {
-            query: params.query,
-            commitment,
-            response: searchResponse,
-            routingId: routingPath.routingId,
-            timestamp: Date.now(),
-          },
-          config.fileverseEncryptionKey,
-          config
-        );
-        storedEntryId = entry.id;
-        storedEntryLink = entry.link;
-        storedEntryStatus = entry.syncStatus;
-        log(`saved to fileverse: ${storedEntryId}`);
-      } catch {
-        log('fileverse save skipped (non-fatal)');
-      }
+      // 8. Save query to Fileverse (fire-and-forget, no response data)
+      saveSearchRecord(
+        {
+          query: params.query,
+          commitment,
+          routingId: routingPath.routingId,
+          timestamp: Date.now(),
+        },
+        config.fileverseEncryptionKey,
+        config
+      )
+        .then((entry) => log(`saved to fileverse: ${entry.id}`))
+        .catch((err) => log(`fileverse save failed: ${err instanceof Error ? err.message : err}`));
 
       // 9. Return results
       const resultText = searchResponse.results
@@ -142,10 +132,8 @@ export function registerPrivateSearchTool(server: McpServer, config: ServerConfi
         `Result hash: ${resultHash}`,
         `Nullifier: ${nullifier.slice(0, 16)}...`,
         `Routing: ${routingPath.hops.map(h => h.ensName).join(' → ')}`,
-        storedEntryId ? `Stored: ${storedEntryId}` : null,
-        storedEntryStatus ? `Storage status: ${storedEntryStatus}` : null,
-        storedEntryLink ? `History link: ${storedEntryLink}` : null,
-      ].filter(Boolean).join('\n');
+        `Storage: saving in background`,
+      ].join('\n');
 
       log(`done — returning ${searchResponse.totalResults} results`);
       return {

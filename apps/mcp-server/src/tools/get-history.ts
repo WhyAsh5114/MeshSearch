@@ -32,13 +32,14 @@ export function registerGetHistoryTool(server: McpServer, config: ServerConfig) 
 
         const entries = history.map((entry, i) => {
           const r = entry.record;
-          const topResults = r.response.results.slice(0, 3)
+          const topResults = r.response?.results.slice(0, 3)
             .map(res => `  - ${res.title}: ${res.url}`)
-            .join('\n');
+            .join('\n') || '  (query-only record)';
 
           return `### ${i + 1}. Search (${new Date(r.timestamp).toISOString()})
+Query: ${r.query ?? '(encrypted)'}
 Commitment: ${r.commitment}
-Results: ${r.response.totalResults}
+Results: ${r.response?.totalResults ?? 'N/A'}
 Document ID: ${entry.id}
 Sync status: ${entry.syncStatus ?? 'unknown'}
 Link: ${entry.link ?? 'not available'}
