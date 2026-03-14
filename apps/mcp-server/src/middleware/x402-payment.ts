@@ -154,6 +154,12 @@ export async function processX402(req: IncomingMessage): Promise<X402Result> {
       );
       if (settle.success) {
         console.error(`[x402] Settlement success: tx=${settle.transaction} network=${settle.network}`);
+
+        // Trigger BitGo stealth-address disbursement to relay operators
+        triggerBitGoDisbursement(settle.transaction ?? 'unknown').catch((err) => {
+          console.error('[x402→bitgo] Disbursement failed (non-blocking):', err instanceof Error ? err.message : err);
+        });
+
         return { type: 'pass', settlementHeaders: settle.headers };
       }
       console.error('[x402] Settlement failed:', settle.errorReason);
@@ -193,6 +199,42 @@ export function writeX402Response(res: ServerResponse, result: X402Result): void
   } else {
     res.end();
   }
+}
+
+// ─── BitGo stealth-address disbursement (post-settlement) ───────────────────
+
+import { isBitGoEnabled, loadBitGoConfig } from '../bitgo/client.js';
+import { disburseToRelays, loadDisbursementConfig } from '../bitgo/stealth-disbursement.js';
+
+/**
+ * After x402 settlement confirms a search payment, disburse shares to relay
+ * operators using fresh BitGo addresses (stealth-address pattern).
+ *
+ * This is fire-and-forget from the x402 middleware's perspective — the search
+ * proceeds immediately. Disbursement happens asynchronously.
+ */
+async function triggerBitGoDisbursement(settlementTxId: string): Promise<void> {
+  if (!isBitGoEnabled()) return;
+
+  const bitgoConfig = loadBitGoConfig();
+  const disbursementConfig = loadDisbursementConfig();
+
+  // Convert search price to base units (wei). The x402 price is in USD format
+  // like '$0.001'. For testnet, we use a nominal amount.
+  // In production, this would use an oracle for USD→ETH conversion.
+  const nominalAmountWei = '1000000000000000'; // 0.001 ETH for testnet
+
+  const result = await disburseToRelays(
+    nominalAmountWei,
+    `x402-${settlementTxId.slice(0, 12)}`,
+    bitgoConfig,
+    disbursementConfig,
+  );
+
+  console.error(
+    `[x402→bitgo] Disbursement complete: txid=${result.txid} ` +
+    `splits=${result.splits.map(s => `${s.ensName}→${s.address.slice(0, 10)}…`).join(', ')}`,
+  );
 }
 
 // ─── ENS subscription check — real on-chain resolution + AccessControl ──────
