@@ -12,8 +12,8 @@
     }
   },
   "scripts": {
-    "build": "tsc --project tsconfig.json",
-    "clean": "rm -rf dist",
+    "build": "pnpm run clean && tsc --project tsconfig.json",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo",
     "check-types": "tsc --noEmit"
   },
   "devDependencies": {
