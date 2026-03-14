@@ -68,7 +68,7 @@ export default function HomePage() {
   return (
     <main className="min-h-screen bg-background text-foreground">
       <section className="border-b border-border bg-card">
-        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-4 px-6 py-4">
+        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-3 px-6 py-3.5">
           <div className="flex items-center gap-2.5">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary">
               <Shield className="h-4 w-4 text-primary-foreground" />
@@ -80,9 +80,9 @@ export default function HomePage() {
               </p>
             </div>
           </div>
-          <div className="flex gap-2">
-            <Button asChild variant="outline">
-              <Link href="/chat">
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" className="px-3">
+              <Link href="/chat" className="inline-flex items-center gap-1.5">
                 Open Chat
                 <ArrowRight className="h-4 w-4" />
               </Link>
@@ -92,8 +92,8 @@ export default function HomePage() {
       </section>
 
       <section className="mx-auto w-full max-w-6xl px-6 pb-12 pt-10 md:pb-16 md:pt-14">
-        <div className="grid items-start gap-8 lg:grid-cols-[1.2fr_0.8fr]">
-          <div className="space-y-6">
+        <div className="grid items-start gap-6 lg:grid-cols-[1.18fr_0.82fr]">
+          <div className="space-y-5">
             <Badge
               variant="secondary"
               className="rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.12em]"
@@ -111,65 +111,26 @@ export default function HomePage() {
             </p>
 
             <div className="flex flex-wrap gap-3 pt-2">
-              <Button asChild size="lg">
-                <Link href="/chat">
-                  Start Private Search
-                  <ArrowRight className="h-4 w-4" />
-                </Link>
+              <Button size="lg">
+                <Link href="/chat">Start Private Search</Link>
               </Button>
-              <Button asChild size="lg" variant="outline">
+              <Button size="lg" variant="outline">
                 <Link href="https://x402.org" target="_blank" rel="noreferrer">
                   Learn x402
                 </Link>
               </Button>
             </div>
-
-            <div className="grid gap-3 pt-3 sm:grid-cols-3">
-              <Card>
-                <CardContent className="flex items-center gap-3 p-4">
-                  <Wallet className="h-4 w-4 text-primary" />
-                  <div>
-                    <p className="text-sm font-medium">Wallet Native</p>
-                    <p className="text-xs text-muted-foreground">
-                      Connect and pay per search
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="flex items-center gap-3 p-4">
-                  <Bot className="h-4 w-4 text-primary" />
-                  <div>
-                    <p className="text-sm font-medium">MCP Tooling</p>
-                    <p className="text-xs text-muted-foreground">
-                      Works with AI agents
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="flex items-center gap-3 p-4">
-                  <Server className="h-4 w-4 text-primary" />
-                  <div>
-                    <p className="text-sm font-medium">Self-Hostable</p>
-                    <p className="text-xs text-muted-foreground">
-                      Runs in your own stack
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
           </div>
 
-          <Card>
+          <Card size="sm">
             <CardHeader>
               <CardTitle className="text-lg">MCP Tools</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="space-y-2.5">
               {toolRows.map((tool) => (
                 <div
                   key={tool.name}
-                  className="rounded-lg border border-border bg-muted p-3"
+                  className="rounded-lg border border-border bg-muted px-3 py-2.5"
                 >
                   <p className="font-mono text-xs text-primary">{tool.name}</p>
                   <p className="mt-1 text-sm text-muted-foreground">
@@ -190,12 +151,12 @@ export default function HomePage() {
               Core Capabilities
             </p>
           </div>
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid items-stretch gap-3 md:grid-cols-2">
             {features.map((feature) => {
               const Icon = feature.icon;
               return (
-                <Card key={feature.title}>
-                  <CardContent className="p-5">
+                <Card key={feature.title} size="sm" className="h-full">
+                  <CardContent className="p-4">
                     <div className="mb-3 inline-flex h-9 w-9 items-center justify-center rounded-lg bg-muted">
                       <Icon className="h-4 w-4 text-primary" />
                     </div>
@@ -212,7 +173,7 @@ export default function HomePage() {
       </section>
 
       <section className="mx-auto w-full max-w-6xl px-6 py-12 md:py-16">
-        <Card>
+        <Card size="sm">
           <CardHeader>
             <CardTitle className="text-lg">Deployment Stack Snapshot</CardTitle>
           </CardHeader>
@@ -229,7 +190,7 @@ export default function HomePage() {
           </CardContent>
         </Card>
 
-        <div className="mt-8 flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border bg-card p-5">
+        <div className="mt-8 flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border bg-card p-4">
           <div>
             <p className="text-base font-semibold">
               Ready to run a private paid search?
@@ -239,8 +200,8 @@ export default function HomePage() {
               x402-backed query.
             </p>
           </div>
-          <Button asChild size="lg">
-            <Link href="/chat">
+          <Button size="lg" className="min-w-35 justify-center">
+            <Link href="/chat" className="inline-flex items-center gap-2">
               Go To Chat
               <ArrowRight className="h-4 w-4" />
             </Link>
