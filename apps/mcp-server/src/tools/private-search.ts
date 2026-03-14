@@ -41,7 +41,7 @@ export function registerPrivateSearchTool(server: McpServer, config: ServerConfi
       console.error(`\x1b[1m[private_search]\x1b[0m query="${params.query}"`);
       try {
       // 1. Create query commitment (hides the query)
-      const { commitment, salt } = createQueryCommitment(params.query);
+      const { commitment } = createQueryCommitment(params.query);
       log('commitment created');
 
       // 2. Generate real Semaphore ZK proof
@@ -108,20 +108,25 @@ export function registerPrivateSearchTool(server: McpServer, config: ServerConfi
       );
 
       // 8. Save encrypted record to Fileverse
-      let storageCid: string | undefined;
+      let storedEntryId: string | undefined;
+      let storedEntryLink: string | undefined;
+      let storedEntryStatus: string | undefined;
       try {
         const entry = await saveSearchRecord(
           {
+            query: params.query,
             commitment,
             response: searchResponse,
             routingId: routingPath.routingId,
             timestamp: Date.now(),
           },
-          salt,
-          config.fileverseApiUrl
+          config.fileverseEncryptionKey,
+          config
         );
-        storageCid = entry.cid;
-        log(`saved to fileverse: ${storageCid}`);
+        storedEntryId = entry.id;
+        storedEntryLink = entry.link;
+        storedEntryStatus = entry.syncStatus;
+        log(`saved to fileverse: ${storedEntryId}`);
       } catch {
         log('fileverse save skipped (non-fatal)');
       }
@@ -137,7 +142,9 @@ export function registerPrivateSearchTool(server: McpServer, config: ServerConfi
         `Result hash: ${resultHash}`,
         `Nullifier: ${nullifier.slice(0, 16)}...`,
         `Routing: ${routingPath.hops.map(h => h.ensName).join(' → ')}`,
-        storageCid ? `Stored: ${storageCid}` : null,
+        storedEntryId ? `Stored: ${storedEntryId}` : null,
+        storedEntryStatus ? `Storage status: ${storedEntryStatus}` : null,
+        storedEntryLink ? `History link: ${storedEntryLink}` : null,
       ].filter(Boolean).join('\n');
 
       log(`done — returning ${searchResponse.totalResults} results`);
@@ -158,4 +165,3 @@ export function registerPrivateSearchTool(server: McpServer, config: ServerConfi
     }
   );
 }
-

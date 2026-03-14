@@ -14,12 +14,12 @@ export function registerCompileReportTool(server: McpServer, config: ServerConfi
     'Compile your searches into a report.',
     {
       title: z.string().describe('Report title'),
-      searchCids: z.array(z.string()).min(1).describe('Search IDs to include'),
-      walletKey: z.string().optional().describe('Wallet key (optional)'),
+      searchCids: z.array(z.string()).min(1).describe('Search document IDs to include'),
+      walletKey: z.string().optional().describe('Wallet key (optional, uses configured history key if not provided)'),
       author: z.string().optional().describe('Wallet address (optional)'),
     },
     async (params) => {
-      const key = params.walletKey ?? config.backendPublicKey;
+      const key = params.walletKey ?? config.fileverseEncryptionKey;
       const author = params.author ?? '0x0000000000000000000000000000000000000000';
       try {
         const { report, entry } = await compileReport(
@@ -27,7 +27,7 @@ export function registerCompileReportTool(server: McpServer, config: ServerConfi
           params.searchCids,
           key,
           author as HexString,
-          config.fileverseApiUrl
+          config
         );
 
         return {
@@ -35,8 +35,10 @@ export function registerCompileReportTool(server: McpServer, config: ServerConfi
             type: 'text' as const,
             text: `# Report Compiled: ${report.title}
 
-**CID:** ${entry.cid}
-**Searches included:** ${report.searchCids.length}
+**Document ID:** ${entry.id}
+**Sync status:** ${entry.syncStatus ?? 'unknown'}
+**Shareable link:** ${entry.link ?? 'not available yet'}
+**Searches included:** ${report.searchIds.length}
 **Author:** ${report.author}
 **Created:** ${new Date(report.createdAt).toISOString()}
 

@@ -12,10 +12,12 @@
  *   stdio           — stdin/stdout for Claude Desktop / Cursor
  */
 
-import 'dotenv/config';
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomUUID } from 'node:crypto';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { config as loadDotenv } from 'dotenv';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -24,6 +26,11 @@ import { registerPrivateSearchTool } from './tools/private-search.js';
 import { registerGetHistoryTool } from './tools/get-history.js';
 import { registerCompileReportTool } from './tools/compile-report.js';
 import { processX402, writeX402Response } from './middleware/x402-payment.js';
+import { getSearchHistory } from './fileverse/client.js';
+
+const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../');
+loadDotenv({ path: resolve(projectRoot, '.env') });
+loadDotenv();
 
 const config = loadConfig();
 const TRANSPORT_MODE = process.env.MCP_TRANSPORT ?? 'http';
@@ -92,7 +99,8 @@ else {
     const start = Date.now();
     const method = req.method ?? 'GET';
     const url = req.url ?? '/';
-    const pathname = url.split('?')[0];
+    const requestUrl = new URL(url, `http://${req.headers.host ?? 'localhost'}`);
+    const pathname = requestUrl.pathname;
     const sid = req.headers['mcp-session-id'] as string | undefined;
 
     cors(req, res);
@@ -112,6 +120,41 @@ else {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ status: 'ok', transport: 'http', sessions: sessions.size }));
       logRes(method, pathname, 200, Date.now() - start, `sessions=${sessions.size}`);
+      return;
+    }
+
+    if (pathname === '/history') {
+      if (method !== 'GET') {
+        res.writeHead(405, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Method not allowed' }));
+        logRes(method, pathname, 405, Date.now() - start);
+        return;
+      }
+
+      const requestedLimit = Number.parseInt(requestUrl.searchParams.get('limit') ?? '20', 10);
+      const limit = Number.isFinite(requestedLimit)
+        ? Math.min(Math.max(requestedLimit, 1), 100)
+        : 20;
+
+      try {
+        const history = await getSearchHistory(
+          config.fileverseEncryptionKey,
+          config,
+          limit
+        );
+
+        res.writeHead(200, {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-store',
+        });
+        res.end(JSON.stringify({ entries: history }));
+        logRes(method, pathname, 200, Date.now() - start, `entries=${history.length}`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: message }));
+        logRes(method, pathname, 500, Date.now() - start, red(message));
+      }
       return;
     }
 

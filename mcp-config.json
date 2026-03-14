@@ -3,23 +3,23 @@
     "meshsearch": {
       "command": "node",
       "args": [
-        "/Users/anonjr/Documents/Web/MeshSearch/apps/mcp-server/dist/index.js"
+        "/home/sundaram/meshsearch/apps/mcp-server/dist/index.js"
       ],
       "env": {
         "PORT": "3038",
         "MCP_TRANSPORT": "stdio",
         "SEARCH_BACKEND_URL": "http://localhost:4001",
-        "RELAY_ENDPOINTS": "http://localhost:4002|02b087d8ab0d28b5a19b0244a877072b5a380082b82ef6b6cfdba5743a94e6a2d2|relay1.meshsearch.eth,http://localhost:4003|020795ecfb86f8508ef1578136c6bcee577a410f553d101d1beb23970fd0e07da8|relay2.meshsearch.eth,http://localhost:4004|03b6b7f7336013d6a5ec717689a8a5670a4527db9e114fdfb96a1dc6d320e3b727|relay3.meshsearch.eth",
+        "RELAY_ENDPOINTS": "http://localhost:4002|039e62974ed3e9ac3187f3df95a2145df938aac734454a2445fa57e5dc9449dcd3|relay1.meshsearch.eth,http://localhost:4003|022d622382e72d7edaf844e2aa3611b3fbe6f1ea9f93af9130cb46d1e75600c73c|relay2.meshsearch.eth,http://localhost:4004|02f12cfcd66cadcef808e587a9bc82fd9ad00db6bcc3423a72885781824e6ec90b|relay3.meshsearch.eth",
         "FILEVERSE_API_URL": "http://localhost:4005",
-        "BACKEND_PUBLIC_KEY": "027ec18b7c25238b441dfef4c9e14a67edf9770ea29cce503ed0c432d6ca9150dd",
-        "SEMAPHORE_SECRET": "c40c08eea32ca9a77d3a315c08247533f8101ea5f9287cd20200f40b069376d6",
+        "BACKEND_PUBLIC_KEY": "03c3184693da338890b7d400fadee69b55c01ba495ae626a33538e1ca0be037f04",
+        "SEMAPHORE_SECRET": "a54516e378952fb78100d1c57446e08e9f81f1e875aec672e7ed0b9b2b729e99",
         "RPC_URL": "http://localhost:8545",
-        "NODE_REGISTRY_ADDRESS": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
-        "NULLIFIER_REGISTRY_ADDRESS": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
-        "PAYMENT_SPLITTER_ADDRESS": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
-        "ACCESS_CONTROL_ADDRESS": "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9",
+        "NODE_REGISTRY_ADDRESS": "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9",
+        "NULLIFIER_REGISTRY_ADDRESS": "0x5FC8d32690cc91D4c39d9d3abcBD16989F875707",
+        "PAYMENT_SPLITTER_ADDRESS": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+        "ACCESS_CONTROL_ADDRESS": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
         "X402_ENABLED": "true",
-        "X402_PAY_TO": "0x51944Dd4b0862390b601B3d221978dC8B8f561a9",
+        "X402_PAY_TO": "0xD004aeba63e7107f12B29A1D44cc634e2E9753F4",
         "X402_SEARCH_PRICE": "$0.001",
         "X402_NETWORK": "eip155:84532"
       }

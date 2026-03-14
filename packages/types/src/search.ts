@@ -44,6 +44,8 @@ export interface SearchResponse {
 
 /** Full search record (commitment + result) for storage */
 export interface SearchRecord {
+  /** Original user query, stored inside the encrypted history payload */
+  query?: string;
   /** Query commitment hash */
   commitment: HexString;
   /** Search response */
