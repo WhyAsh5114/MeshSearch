@@ -1,203 +1,129 @@
 # MeshSearch — Private Web Search for AI Agents
 
-> An untraceable web search protocol for AI agents and humans. Queries are committed with ZK proofs, payments are anonymous via x402, results are routed through ENS-named relay nodes, and history is stored encrypted on Fileverse.
+> Queries committed with ZK proofs, payments via x402 micropayments, 3-hop onion relay routing, encrypted history on Fileverse. Cryptographic privacy, not promises.
 
 ---
 
-## The Problem
+## What It Does
 
-Every web search today leaks two things: **who you are** and **what you searched.** Existing privacy tools (VPNs, Tor) can hide who you are, but your raw query still travels in plaintext to a search engine that logs it. For AI agents this is worse — an agent researching a trading strategy, a competitor, or a vulnerability exposes its entire intent to whoever runs the search backend.
+Every web search leaks **who you are** and **what you searched.** MeshSearch removes the need to trust anyone: queries are committed client-side with ZK proofs before they leave your device, payments are anonymous USDC micropayments via x402, traffic routes through 3 ENS-named relay hops, and results are stored encrypted on Fileverse.
 
-There is no search tool today that is:
-- Natively usable by AI agents via MCP
-- Anonymous at the payment layer (no account, no identity)
-- Cryptographically private at the query layer (not just "we promise not to log")
-- Storing results in user-owned encrypted storage
+It ships as an **MCP server** — any AI agent (Claude, Cursor, etc.) can use it as a tool.
 
-MeshSearch builds all four.
+**See [ARCHITECTURE.md](ARCHITECTURE.md) for the full technical deep-dive.**
 
 ---
 
-## Core Insight
-
-Most "private search" tools move surveillance from Google to themselves. They still receive your plaintext query — you've just changed who you're trusting. MeshSearch removes the need to trust anyone by committing queries client-side using ZK before they ever leave the user's device.
-
----
-
-## Architecture
-
-The system has four layers. Each layer solves one distinct privacy problem.
-
-```
-┌──────────────────────────────────────────────┐
-│            User / AI Agent                   │
-│                                              │
-│  Query committed locally via ZK              │
-│  Raw query never leaves this layer           │
-└────────────────────┬─────────────────────────┘
-                     │  ZK proof + encrypted query blob
-                     │  x402 micropayment (no identity)
-┌────────────────────▼─────────────────────────┐
-│            MeshSearch MCP Server             │
-│                                              │
-│  Verifies ZK proof — never sees raw query    │
-│  Checks x402 payment or ENS subscription     │
-│  Stores nullifier onchain (anti-replay)      │
-└────────────────────┬─────────────────────────┘
-                     │  Encrypted query blob
-┌────────────────────▼─────────────────────────┐
-│         ENS-Named Relay Network              │
-│                                              │
-│  relay1.meshsearch.eth                       │
-│  relay2.meshsearch.eth                       │
-│  relay3.meshsearch.eth                       │
-│                                              │
-│  3-hop routing — each relay knows only       │
-│  previous and next hop, never full path      │
-│  Relay operators earn x402 payment split     │
-│  Reputation tracked onchain by ENS name      │
-└────────────────────┬─────────────────────────┘
-                     │  Decrypted only here
-┌────────────────────▼─────────────────────────┐
-│         Self-Hosted Search Backend           │
-│                                              │
-│  SearXNG — only node that decrypts query     │
-│  Aggregates results across providers         │
-│  Result hash stored onchain for integrity    │
-│  Zero logs by design                         │
-└────────────────────┬─────────────────────────┘
-                     │  Results + integrity proof
-┌────────────────────▼─────────────────────────┐
-│         Fileverse Encrypted Storage          │
-│                                              │
-│  Query commitment + result saved to IPFS     │
-│  Encrypted with user's wallet key            │
-│  Only user can decrypt their history         │
-│  Accessible via Fileverse MCP                │
-└──────────────────────────────────────────────┘
-```
-
----
-
-## ZK Primitives
-
-### 1. Query Commitment
-The user hashes their query with a random salt client-side before the request is sent. The MCP server receives only this commitment — a hash — never the raw text. The search backend receives an asymmetrically encrypted version of the query that only it can decrypt. No intermediate layer (MCP server, relay nodes) ever sees the plaintext query.
-
-### 2. Payment Unlinking via Nullifiers
-Each search payment generates a unique nullifier using Semaphore. The nullifier is stored onchain after use to prevent replay attacks. Crucially, the nullifier is not linked to the user's wallet — an observer watching the blockchain cannot connect a wallet address to a search event. This is the same pattern Tornado Cash used for anonymous withdrawals, applied to search payments.
-
-### 3. ZK Authorization Proof
-Users prove they are authorized to search (paid, or hold an ENS subscription) without revealing their identity. The MCP server verifies the proof onchain and proceeds. No account. No login. No linkable identifier.
-
-### 4. Result Integrity Proof
-After search completes, the result set is hashed and stored onchain. This creates a tamper-evident record — anyone can verify that the results returned to the user match what the search backend produced. Agents can trust their search results are not manipulated.
-
----
-
-## ENS Integration
-
-ENS serves two roles in MeshSearch that go beyond simple naming.
-
-**Relay Identity and Reputation**
-Each relay node is registered under a subdomain of `meshsearch.eth`. Relay operators stake their ENS reputation on honest behavior. The smart contract tracks a reputation score per ENS name, updated after each routing event. The routing algorithm selects the top three relays by reputation score for every request. A relay that tampers with traffic or goes offline loses its onchain score — creating a cryptoeconomic incentive for honest operation without any centralized oversight.
-
-**Subscription Access**
-Users holding an ENS name are automatically granted a premium search tier without any payment per query. The MCP server resolves the connected wallet's ENS name and grants access accordingly. No account creation, no API key, no email — ENS name is the identity and the access credential.
-
----
-
-## x402 Payment Flow
-
-x402 is an HTTP-native payment protocol. When a user without an ENS subscription calls the search tool, the server returns a `402 Payment Required` response with a payment address and amount on Base. The client (agent wallet or user wallet) pays the micropayment automatically. The server verifies payment onchain and proceeds.
-
-The payment is then split between the three relay nodes that handled the request via an onchain splitter contract. Relay operators earn passively for providing routing infrastructure. The user never creates an account. The payment is not linked to the query by design.
-
----
-
-## Fileverse Integration
-
-Every search produces two artifacts: a query commitment and a result. Both are saved as an encrypted entry in a Fileverse document stored on IPFS. The document is encrypted with the user's wallet key — Fileverse cannot read it, the MCP server cannot read it, nobody can read it except the user.
-
-This gives users a private, portable, permanent search history that no company owns. Agents can also compile multiple searches into a structured research report saved as a Fileverse document, shareable via wallet address with no intermediary.
-
-This is the direct inverse of Google Workspace — collaboration and history without surveillance.
-
----
-
-## Components
-
-### Smart Contracts (Base L2)
-- **NodeRegistry** — relay node registration, ENS name linking, reputation scores
-- **NullifierRegistry** — stores used nullifiers to prevent search replay
-- **PaymentSplitter** — distributes x402 payments to relay operators
-- **AccessControl** — ENS subscription tier management
-
-### MCP Server
-Exposes three tools to any MCP-compatible AI agent:
-- `private_search` — execute a private search with ZK proof + x402 payment
-- `get_history` — retrieve and decrypt search history from Fileverse
-- `compile_report` — aggregate multiple searches into an encrypted Fileverse document
-
-### Relay Nodes
-Three lightweight HTTP servers registered onchain with ENS names. Each relay forwards an encrypted request blob to the next hop. No relay can read the query. Each earns a share of the x402 payment per routing event.
-
-### Search Backend
-Self-hosted SearXNG instance. The only component that decrypts and executes the query. Aggregates results from multiple providers. Produces a result hash stored onchain. No query logs.
-
-### Dashboard
-A Next.js frontend for human users. Shows relay network status and ENS reputation scores, payment flow visualization, and a wallet-gated history viewer that decrypts Fileverse entries client-side.
-
----
-
-## Repository Structure
-
-```
-meshsearch/
-├── contracts/
-│   ├── NodeRegistry.sol
-│   ├── NullifierRegistry.sol
-│   ├── PaymentSplitter.sol
-│   └── AccessControl.sol
-│
-├── mcp-server/
-│   ├── tools/          — search, history, report tool definitions
-│   ├── middleware/     — ZK verification, x402, ENS resolution
-│   └── relay/          — relay selection + routing client
-│
-├── relay-node/         — lightweight relay HTTP server
-│
-├── search-backend/     — SearXNG wrapper + result hashing
-│
-├── fileverse/          — encrypted history + report storage
-│
-├── dashboard/          — Next.js UI
-│   ├── pages/          — search, history, relay network
-│   └── components/     — relay map, payment indicator, history viewer
-│
-└── scripts/
-    ├── deploy.ts           — contract deployment to Base Sepolia
-    ├── setupENS.ts         — register relay ENS subdomains
-    └── registerRelays.ts
-```
-
----
-
-## Getting Started
+## Quick Start
 
 ### Prerequisites
 
 - **Node.js** ≥ 20
 - **pnpm** ≥ 9
-- **Docker** (for SearXNG)
+- **Docker** (for SearXNG search engine)
 
-### 1. Install dependencies
+### One-Command Setup
 
 ```bash
 pnpm install
+pnpm run:setup
 ```
 
-### 2. Start SearXNG (search engine)
+The interactive setup script will:
+1. Check prerequisites (node, pnpm, docker)
+2. Generate secp256k1 key pairs for all services
+3. Configure ports (defaults: SearXNG 8888, relays 4002–4004, MCP 3038)
+4. Optionally deploy smart contracts to a local Hardhat node
+5. Optionally enable x402 payments (Base Sepolia USDC)
+6. Write all `.env` files
+7. Start SearXNG, 3 relay nodes, search backend, Fileverse, and the MCP server
+8. Output the MCP wiring config for Claude Desktop / Cursor
+
+Once setup finishes, all services are running and the MCP config is saved to `mcp-config.json`.
+
+---
+
+## x402 Payments
+
+MeshSearch uses the [x402 protocol](https://x402.org) for anonymous per-search micropayments on Base Sepolia.
+
+When enabled, calling `private_search` returns **HTTP 402** with a USDC price quote. The client signs a USDC authorization, re-sends the request, and the server settles payment on-chain. No account, no identity — just a wallet.
+
+### Enable x402
+
+During `pnpm run:setup`, answer **yes** to "Enable x402 per-search payments" and provide your Base Sepolia wallet address. Or set manually in `apps/mcp-server/.env`:
+
+```env
+X402_ENABLED=true
+X402_PAY_TO=0xYourWalletAddress
+X402_SEARCH_PRICE=$0.001
+X402_NETWORK=eip155:84532
+```
+
+### Demo Client (Interactive REPL)
+
+The demo client is a proper x402-aware MCP client with a crypto wallet built in. It shows the full payment flow: price quote → USDC signing → on-chain settlement → BaseScan transaction link.
+
+```bash
+cd apps/mcp-server
+
+# Set your wallet key (needs Base Sepolia ETH + USDC)
+export TEST_WALLET_KEY=0x<your-private-key>
+
+# Interactive mode
+pnpm demo
+
+# Single query
+node demo.mjs "what are zero knowledge proofs"
+```
+
+**Get testnet tokens:**
+- ETH for gas: [alchemy.com/faucets/base-sepolia](https://www.alchemy.com/faucets/base-sepolia)
+- USDC: [faucet.circle.com](https://faucet.circle.com)
+
+**REPL commands:** type a query to search, `balance` to check USDC, `help` for options.
+
+---
+
+## MCP Tools
+
+The server exposes three tools:
+
+| Tool | Description |
+|---|---|
+| `private_search` | ZK-committed search with onion routing and x402 payment |
+| `get_history` | Retrieve + decrypt search history from Fileverse |
+| `compile_report` | Aggregate searches into an encrypted Fileverse document |
+
+---
+
+## Connect to Claude Desktop / Cursor
+
+The setup script generates `mcp-config.json` at the repo root. Copy it into:
+
+- **Claude Desktop (macOS):** `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Claude Desktop (Linux):** `~/.config/claude/claude_desktop_config.json`
+- **Cursor:** Settings → MCP Servers
+
+Or use HTTP transport directly — the server runs on `http://localhost:3038/mcp`.
+
+---
+
+## Manual Setup
+
+If you prefer setting things up step by step instead of using the setup script:
+
+<details>
+<summary>Expand manual setup instructions</summary>
+
+### 1. Install & Build
+
+```bash
+pnpm install
+pnpm build
+```
+
+### 2. Start SearXNG
 
 ```bash
 docker run -d --name meshsearch-searxng -p 8888:8080 \
@@ -205,92 +131,76 @@ docker run -d --name meshsearch-searxng -p 8888:8080 \
   searxng/searxng:latest
 ```
 
-### 3. Start a local Hardhat blockchain node
+### 3. Start all services (6 terminals)
 
 ```bash
-cd packages/contracts
-npx hardhat node &
-```
-
-### 4. Deploy smart contracts
-
-```bash
-cd packages/contracts
-npx hardhat run scripts/deploy.ts --network localhost
-```
-
-Copy the printed contract addresses into `apps/mcp-server/.env`.
-
-### 5. Generate key pairs (if starting fresh)
-
-```bash
-# From the crypto package directory:
-cd packages/crypto
-node -e "
-import('@noble/curves/secp256k1.js').then(({ secp256k1 }) => {
-  import('@noble/hashes/utils').then(({ bytesToHex, randomBytes }) => {
-    const priv = randomBytes(32);
-    console.log('PRIVATE_KEY=' + bytesToHex(priv));
-    console.log('PUBLIC_KEY=' + bytesToHex(secp256k1.getPublicKey(priv, true)));
-  });
-});
-"
-```
-
-Generate one pair for the search backend and one for each relay node. Update the `.env` files accordingly (see `.env.example` for the full configuration format).
-
-### 6. Start all services
-
-```bash
-# Terminal 1 — Search backend
+# Search backend
 cd apps/search-backend && pnpm dev
 
-# Terminal 2 — Relay node 1
+# Relay nodes (one terminal each)
 cd apps/relay-node && PORT=4002 pnpm dev
+cd apps/relay-node && PORT=4003 RELAY_ENS_NAME=relay2.meshsearch.eth pnpm dev
+cd apps/relay-node && PORT=4004 RELAY_ENS_NAME=relay3.meshsearch.eth pnpm dev
 
-# Terminal 3 — Relay node 2
-cd apps/relay-node && PORT=4003 RELAY_ENS_NAME=relay2.meshsearch.eth \
-  RELAY_PRIVATE_KEY=<relay2-private-key> pnpm dev
-
-# Terminal 4 — Relay node 3
-cd apps/relay-node && PORT=4004 RELAY_ENS_NAME=relay3.meshsearch.eth \
-  RELAY_PRIVATE_KEY=<relay3-private-key> pnpm dev
-
-# Terminal 5 — Fileverse storage
+# Fileverse storage
 cd apps/fileverse && pnpm dev
 
-# Terminal 6 — MCP server (HTTP mode)
+# MCP server
 cd apps/mcp-server && pnpm dev
 ```
 
-### 7. Test the MCP server
+### 4. Verify
 
 ```bash
-curl -s http://localhost:3038/mcp -X POST \
+# Initialize an MCP session
+SID=$(curl -sD- http://localhost:3038/mcp \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"curl","version":"1.0"}}}' \
+  | grep -i mcp-session-id | tr -d '\r' | awk '{print $2}')
+
+# List tools
+curl -s http://localhost:3038/mcp \
   -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | jq .
+  -H "Accept: application/json, text/event-stream" \
+  -H "mcp-session-id: $SID" \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | jq .
 ```
 
-### 8. Connect to Claude Desktop / Cursor
+</details>
 
-Add to your MCP config (e.g. `~/.config/claude/claude_desktop_config.json`):
+---
 
-```json
-{
-  "mcpServers": {
-    "meshsearch": {
-      "command": "node",
-      "args": ["apps/mcp-server/dist/index.js"],
-      "cwd": "/path/to/MeshSearch"
-    }
-  }
-}
-```
-
-### 9. Run all tests
+## Run Tests
 
 ```bash
 pnpm turbo test
+```
+
+95+ tests across all packages — crypto, contracts, middleware, relay routing, storage, and x402 payments.
+
+---
+
+## Repository Structure
+
+```
+MeshSearch/
+├── apps/
+│   ├── mcp-server/        MCP server (HTTP + stdio), x402 gate, ZK verification
+│   │   ├── demo.mjs       Interactive x402 demo client (REPL)
+│   │   └── src/
+│   │       ├── tools/     private_search, get_history, compile_report
+│   │       └── middleware/ x402-payment, zk-verification
+│   ├── relay-node/        3-hop onion routing relay servers
+│   ├── search-backend/    SearXNG wrapper + result hashing
+│   ├── fileverse/         Encrypted history storage
+│   └── dashboard/         Next.js UI (relay map, payment viz, history)
+├── packages/
+│   ├── contracts/         Solidity (NodeRegistry, NullifierRegistry, PaymentSplitter, AccessControl)
+│   ├── crypto/            secp256k1 ECDH, AES-256-GCM, Semaphore ZK proofs
+│   └── types/             Shared TypeScript types
+└── scripts/
+    └── setup.ts           Interactive setup & launcher
 ```
 
 ---
@@ -299,86 +209,12 @@ pnpm turbo test
 
 | Layer | Tools |
 |---|---|
-| **ZK** | Semaphore v4 (`@semaphore-protocol/core`) — real Groth16 proofs, Poseidon hashing |
-| **Crypto** | `@noble/curves` (secp256k1 ECDH), `@noble/hashes` (HKDF, SHA-256, AES-256-GCM) |
-| **Blockchain** | Solidity, Base L2, Hardhat, ethers v6 |
-| **Identity** | ENS SDK, SIWE |
-| **Payments** | x402 (`@x402/core`, `@x402/evm`), USDC on Base |
-| **MCP** | `@modelcontextprotocol/sdk` (Node.js, HTTP + stdio transport) |
-| **Search** | SearXNG (self-hosted), Brave Search API |
-| **Storage** | Content-addressed file storage (persistent, SHA-256 CIDs) |
+| **ZK** | Semaphore v4 — Groth16 proofs, Poseidon hashing |
+| **Crypto** | `@noble/curves` secp256k1 ECDH, `@noble/hashes` HKDF + AES-256-GCM |
+| **Payments** | x402 (`@x402/core`, `@x402/evm`), USDC on Base Sepolia |
+| **Blockchain** | Solidity, Hardhat, ethers v6 |
+| **MCP** | `@modelcontextprotocol/sdk` — Streamable HTTP + stdio |
+| **Search** | SearXNG (self-hosted) |
+| **Storage** | Content-addressed encrypted file storage |
 | **Frontend** | Next.js, Tailwind |
-
----
-
-## 42-Hour Build Plan
-
-### Hours 0–6: Foundation
-- Deploy contracts to Base Sepolia
-- MCP server skeleton with `private_search` tool
-- SearXNG running locally
-
-### Hours 6–16: Core Privacy Layer
-- Poseidon query commitment client-side
-- Semaphore nullifier generation + onchain verification
-- x402 payment middleware working end to end
-
-### Hours 16–24: Relay Network
-- Three relay nodes running with ENS subdomains
-- 3-hop routing with encrypted query blob
-- Payment splitting to relay operators onchain
-
-### Hours 24–32: Storage + Identity
-- Fileverse encrypted history saving after each search
-- ENS subscription tier check in MCP server
-- Result hash stored onchain after search
-
-### Hours 32–38: Dashboard
-- Relay network status with ENS names + reputation scores
-- Wallet-gated history viewer (Fileverse decrypt client-side)
-- x402 payment flow visualization
-
-### Hours 38–42: Demo + Pitch
-- End-to-end demo flow rehearsed
-- Presentation ready
-- README finalized
-
----
-
-## Demo Flow
-
-```
-1. Configure Claude Desktop with MeshSearch MCP
-2. Ask Claude to research any topic
-3. MCP intercepts — show ZK proof generated client-side
-4. Show x402 payment on Base explorer (no identity linked)
-5. Show 3 ENS-named relay hops in dashboard
-6. Results returned to Claude
-7. Result hash visible on Base explorer
-8. Open history viewer — wallet-sign to decrypt Fileverse entries
-9. Show zero logs on MCP server terminal
-```
-
-Every step is visual, verifiable, and tells the privacy story without explanation.
-
----
-
-## Prize Tracks
-
-| Sponsor | Track | Why We Qualify |
-|---|---|---|
-| **HeyElsa** | Best Use of x402 + OpenClaw | x402 is the core anonymous payment layer |
-| **HeyElsa** | Real World SDK Problems | Private agent search is an immediate real-world need |
-| **ENS** | Best Creative Use | ENS as relay reputation infrastructure — not just naming |
-| **ENS** | Pool Prize | Multiple ENS integrations (relay names + subscriptions) |
-| **Fileverse** | Build What Big Tech Won't | Encrypted user-owned search history — Google's anti-thesis |
-| **Base** | Privacy | ZK + anonymous payments running on Base |
-| **Base** | AI × Onchain | AI agents paying onchain for private search via MCP |
-| **ETHMumbai** | Privacy Track | ZK query commitments + nullifier unlinking |
-| **ETHMumbai** | AI Track | MCP-native, works with any AI agent out of the box |
-
----
-
-## One-Line Pitch
-
-> *MeshSearch is a private web search MCP — queries are committed with ZK proofs before leaving the device, payments are anonymous via x402, routing is handled by ENS-named relay nodes with onchain reputation, and history is encrypted on Fileverse. Cryptographic privacy, not promises.*
+| **Monorepo** | pnpm workspaces, Turborepo |

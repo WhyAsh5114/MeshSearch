@@ -118,20 +118,28 @@ async function main() {
     });
   } catch {}
 
+  // ANSI-aware box row: pads content to INNER visible chars so the right ║ always aligns
+  const INNER = 62;
+  const stripAnsi = (s) => s.replace(/\x1b\[[0-9;]*m/g, '');
+  const row = (content = '') => {
+    const pad = Math.max(0, INNER - stripAnsi(content).length);
+    return `${c.bold('║')}${content}${' '.repeat(pad)}${c.bold('║')}`;
+  };
+
   console.log(`
 ${c.bold('╔══════════════════════════════════════════════════════════════╗')}
-${c.bold('║')}  ${c.cyan('MeshSearch')} — Private AI Search with x402 Micropayments   ${c.bold('║')}
+${row(`  ${c.cyan('MeshSearch')} — Private AI Search with x402 Micropayments`)}
 ${c.bold('╠══════════════════════════════════════════════════════════════╣')}
-${c.bold('║')}                                                            ${c.bold('║')}
-${c.bold('║')}  ${c.dim('Wallet:')}  ${c.cyan(account.address)}   ${c.bold('║')}
-${c.bold('║')}  ${c.dim('Chain:')}   ${c.cyan(chain.name)} (${chain.id})                          ${c.bold('║')}
-${c.bold('║')}  ${c.dim('ETH:')}     ${c.cyan(formatEther(ethBal))}                               ${c.bold('║')}
-${c.bold('║')}  ${c.dim('USDC:')}    ${c.cyan(formatUnits(usdcBal, USDC_DECIMALS))}                                ${c.bold('║')}
-${c.bold('║')}  ${c.dim('Server:')}  ${c.cyan(BASE)}                       ${c.bold('║')}
-${c.bold('║')}                                                            ${c.bold('║')}
-${c.bold('║')}  ${c.dim('Each search: ZK proof → 3-hop onion relay → encrypted')}    ${c.bold('║')}
-${c.bold('║')}  ${c.dim('Payment: USDC micropayment settled on-chain via x402')}     ${c.bold('║')}
-${c.bold('║')}                                                            ${c.bold('║')}
+${row()}
+${row(`  ${c.dim('Wallet:')}  ${c.cyan(account.address)}`)}
+${row(`  ${c.dim('Chain:')}   ${c.cyan(chain.name)} (${chain.id})`)}
+${row(`  ${c.dim('ETH:')}     ${c.cyan(formatEther(ethBal))}`)}
+${row(`  ${c.dim('USDC:')}    ${c.cyan(formatUnits(usdcBal, USDC_DECIMALS))}`)}
+${row(`  ${c.dim('Server:')}  ${c.cyan(BASE)}`)}
+${row()}
+${row(`  ${c.dim('Each search: ZK proof → 3-hop onion relay → encrypted')}`)}
+${row(`  ${c.dim('Payment: USDC micropayment settled on-chain via x402')}`)}
+${row()}
 ${c.bold('╚══════════════════════════════════════════════════════════════╝')}
 `);
 
