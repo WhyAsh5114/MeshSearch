@@ -183,18 +183,131 @@ meshsearch/
 
 ---
 
+## Getting Started
+
+### Prerequisites
+
+- **Node.js** ≥ 20
+- **pnpm** ≥ 9
+- **Docker** (for SearXNG)
+
+### 1. Install dependencies
+
+```bash
+pnpm install
+```
+
+### 2. Start SearXNG (search engine)
+
+```bash
+docker run -d --name meshsearch-searxng -p 8888:8080 \
+  -e SEARXNG_BASE_URL=http://localhost:8888 \
+  searxng/searxng:latest
+```
+
+### 3. Start a local Hardhat blockchain node
+
+```bash
+cd packages/contracts
+npx hardhat node &
+```
+
+### 4. Deploy smart contracts
+
+```bash
+cd packages/contracts
+npx hardhat run scripts/deploy.ts --network localhost
+```
+
+Copy the printed contract addresses into `apps/mcp-server/.env`.
+
+### 5. Generate key pairs (if starting fresh)
+
+```bash
+# From the crypto package directory:
+cd packages/crypto
+node -e "
+import('@noble/curves/secp256k1.js').then(({ secp256k1 }) => {
+  import('@noble/hashes/utils').then(({ bytesToHex, randomBytes }) => {
+    const priv = randomBytes(32);
+    console.log('PRIVATE_KEY=' + bytesToHex(priv));
+    console.log('PUBLIC_KEY=' + bytesToHex(secp256k1.getPublicKey(priv, true)));
+  });
+});
+"
+```
+
+Generate one pair for the search backend and one for each relay node. Update the `.env` files accordingly (see `.env.example` for the full configuration format).
+
+### 6. Start all services
+
+```bash
+# Terminal 1 — Search backend
+cd apps/search-backend && pnpm dev
+
+# Terminal 2 — Relay node 1
+cd apps/relay-node && PORT=4002 pnpm dev
+
+# Terminal 3 — Relay node 2
+cd apps/relay-node && PORT=4003 RELAY_ENS_NAME=relay2.meshsearch.eth \
+  RELAY_PRIVATE_KEY=<relay2-private-key> pnpm dev
+
+# Terminal 4 — Relay node 3
+cd apps/relay-node && PORT=4004 RELAY_ENS_NAME=relay3.meshsearch.eth \
+  RELAY_PRIVATE_KEY=<relay3-private-key> pnpm dev
+
+# Terminal 5 — Fileverse storage
+cd apps/fileverse && pnpm dev
+
+# Terminal 6 — MCP server (HTTP mode)
+cd apps/mcp-server && pnpm dev
+```
+
+### 7. Test the MCP server
+
+```bash
+curl -s http://localhost:3038/mcp -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | jq .
+```
+
+### 8. Connect to Claude Desktop / Cursor
+
+Add to your MCP config (e.g. `~/.config/claude/claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "meshsearch": {
+      "command": "node",
+      "args": ["apps/mcp-server/dist/index.js"],
+      "cwd": "/path/to/MeshSearch"
+    }
+  }
+}
+```
+
+### 9. Run all tests
+
+```bash
+pnpm turbo test
+```
+
+---
+
 ## Tech Stack
 
 | Layer | Tools |
 |---|---|
-| **ZK** | Semaphore (nullifiers + identity proofs), Poseidon hash (commitments) |
-| **Blockchain** | Solidity, Base L2, Hardhat |
+| **ZK** | Semaphore v4 (`@semaphore-protocol/core`) — real Groth16 proofs, Poseidon hashing |
+| **Crypto** | `@noble/curves` (secp256k1 ECDH), `@noble/hashes` (HKDF, SHA-256, AES-256-GCM) |
+| **Blockchain** | Solidity, Base L2, Hardhat, ethers v6 |
 | **Identity** | ENS SDK, SIWE |
-| **Payments** | x402 (Coinbase), USDC on Base |
-| **MCP** | @modelcontextprotocol/sdk (Node.js) |
+| **Payments** | x402 (`@x402/core`, `@x402/evm`), USDC on Base |
+| **MCP** | `@modelcontextprotocol/sdk` (Node.js, HTTP + stdio transport) |
 | **Search** | SearXNG (self-hosted), Brave Search API |
-| **Storage** | Fileverse API, IPFS |
-| **Frontend** | Next.js, RainbowKit, wagmi, Tailwind |
+| **Storage** | Content-addressed file storage (persistent, SHA-256 CIDs) |
+| **Frontend** | Next.js, Tailwind |
 
 ---
 
