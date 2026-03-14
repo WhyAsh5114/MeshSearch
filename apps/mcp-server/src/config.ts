@@ -42,6 +42,17 @@ export interface ServerConfig {
     paymentSplitter: string;
     accessControl: string;
   };
+  /** BitGo integration settings */
+  bitgo: {
+    enabled: boolean;
+    accessToken: string;
+    env: 'test' | 'prod';
+    walletId: string;
+    walletPassphrase: string;
+    coin: string;
+    expressUrl: string;
+    webhookSecret: string;
+  };
 }
 
 /**
@@ -95,6 +106,16 @@ export function loadConfig(): ServerConfig {
       nullifierRegistry: env('NULLIFIER_REGISTRY_ADDRESS', '0x0000000000000000000000000000000000000000'),
       paymentSplitter: env('PAYMENT_SPLITTER_ADDRESS', '0x0000000000000000000000000000000000000000'),
       accessControl: env('ACCESS_CONTROL_ADDRESS', '0x0000000000000000000000000000000000000000'),
+    },
+    bitgo: {
+      enabled: env('BITGO_ACCESS_TOKEN', '') !== '' && env('BITGO_WALLET_ID', '') !== '',
+      accessToken: env('BITGO_ACCESS_TOKEN', ''),
+      env: (env('BITGO_ENV', 'test') as 'test' | 'prod'),
+      walletId: env('BITGO_WALLET_ID', ''),
+      walletPassphrase: env('BITGO_WALLET_PASSPHRASE', ''),
+      coin: env('BITGO_COIN', 'hteth'),
+      expressUrl: env('BITGO_EXPRESS_URL', ''),
+      webhookSecret: env('BITGO_WEBHOOK_SECRET', ''),
     },
   };
 }
