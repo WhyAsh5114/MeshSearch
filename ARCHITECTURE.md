@@ -94,8 +94,8 @@ Users prove they are authorized to search (paid, or hold an ENS subscription) wi
 **Implementation:** `apps/mcp-server/src/middleware/zk-verification.ts`
 
 - 5-second timeout on onchain verification
-- Falls back to in-memory nullifier tracking when RPC is unavailable
-- Prevents double-spend without revealing caller identity
+- Fails fast if Base Sepolia RPC or contract config is unavailable
+- Optional in-memory fallback is test/dev-only via `MESHSEARCH_ALLOW_INMEMORY_FALLBACK=true`
 
 ### 4. Result Integrity Proof
 
@@ -105,14 +105,14 @@ After search completes, the result set is hashed (SHA-256) and stored onchain. T
 
 ## Cryptographic Stack
 
-| Primitive | Library | Usage |
-|---|---|---|
-| secp256k1 ECDH | `@noble/curves` | Asymmetric query encryption between client and search backend |
-| AES-256-GCM | `@noble/hashes` (via HKDF) | Symmetric encryption of query blobs and relay payloads |
-| Poseidon hash | `@semaphore-protocol/core` | Query commitment (ZK-friendly hash) |
-| Groth16 proofs | Semaphore v4 | Anonymous authorization proofs |
-| SHA-256 | `@noble/hashes` | Result integrity hashing, content-addressed storage |
-| HKDF | `@noble/hashes` | Key derivation from ECDH shared secrets |
+| Primitive      | Library                    | Usage                                                         |
+| -------------- | -------------------------- | ------------------------------------------------------------- |
+| secp256k1 ECDH | `@noble/curves`            | Asymmetric query encryption between client and search backend |
+| AES-256-GCM    | `@noble/hashes` (via HKDF) | Symmetric encryption of query blobs and relay payloads        |
+| Poseidon hash  | `@semaphore-protocol/core` | Query commitment (ZK-friendly hash)                           |
+| Groth16 proofs | Semaphore v4               | Anonymous authorization proofs                                |
+| SHA-256        | `@noble/hashes`            | Result integrity hashing, content-addressed storage           |
+| HKDF           | `@noble/hashes`            | Key derivation from ECDH shared secrets                       |
 
 All crypto runs in pure JavaScript — no native dependencies, no WASM.
 
@@ -135,6 +135,7 @@ The relay network provides unlinkability between the user and the search backend
 ### Relay selection
 
 Relays are registered onchain in `NodeRegistry.sol` with ENS subdomains:
+
 - `relay1.meshsearch.eth`
 - `relay2.meshsearch.eth`
 - `relay3.meshsearch.eth`
@@ -230,12 +231,12 @@ Every search produces two artifacts: a query commitment and a result. Both are s
 
 Four Solidity contracts on Base L2, tested with Hardhat:
 
-| Contract | Purpose | Key functions |
-|---|---|---|
-| `NodeRegistry` | Relay registration, ENS name linking, reputation scores | `registerNode()`, `updateReputation()`, `getTopNodes()` |
-| `NullifierRegistry` | Stores used nullifiers to prevent search replay | `recordNullifier()`, `isNullifierUsed()` |
-| `PaymentSplitter` | Distributes x402 payments to relay operators | `split()` with per-relay share |
-| `AccessControl` | ENS subscription tier management | `checkAccess()`, `grantTier()` |
+| Contract            | Purpose                                                 | Key functions                                           |
+| ------------------- | ------------------------------------------------------- | ------------------------------------------------------- |
+| `NodeRegistry`      | Relay registration, ENS name linking, reputation scores | `registerNode()`, `updateReputation()`, `getTopNodes()` |
+| `NullifierRegistry` | Stores used nullifiers to prevent search replay         | `recordNullifier()`, `isNullifierUsed()`                |
+| `PaymentSplitter`   | Distributes x402 payments to relay operators            | `split()` with per-relay share                          |
+| `AccessControl`     | ENS subscription tier management                        | `checkAccess()`, `grantTier()`                          |
 
 **Source:** `packages/contracts/contracts/`
 **Tests:** `packages/contracts/test/` (Hardhat + ethers v6)
@@ -285,16 +286,16 @@ POST /mcp
 
 ## Services
 
-| Service | Default Port | Package | Description |
-|---|---|---|---|
-| SearXNG | 8888 | Docker | Self-hosted metasearch engine |
-| Search Backend | 4001 | `apps/search-backend` | SearXNG wrapper + result hashing |
-| Relay 1 | 4002 | `apps/relay-node` | Onion routing hop |
-| Relay 2 | 4003 | `apps/relay-node` | Onion routing hop |
-| Relay 3 | 4004 | `apps/relay-node` | Onion routing hop |
-| Fileverse | 4005 | `apps/fileverse` | Encrypted document storage |
-| MCP Server | 3038 | `apps/mcp-server` | Main entry point (x402 + MCP) |
-| Dashboard | 3000 | `apps/dashboard` | Next.js UI (optional) |
+| Service        | Default Port | Package               | Description                      |
+| -------------- | ------------ | --------------------- | -------------------------------- |
+| SearXNG        | 8888         | Docker                | Self-hosted metasearch engine    |
+| Search Backend | 4001         | `apps/search-backend` | SearXNG wrapper + result hashing |
+| Relay 1        | 4002         | `apps/relay-node`     | Onion routing hop                |
+| Relay 2        | 4003         | `apps/relay-node`     | Onion routing hop                |
+| Relay 3        | 4004         | `apps/relay-node`     | Onion routing hop                |
+| Fileverse      | 4005         | `apps/fileverse`      | Encrypted document storage       |
+| MCP Server     | 3038         | `apps/mcp-server`     | Main entry point (x402 + MCP)    |
+| Dashboard      | 3000         | `apps/dashboard`      | Next.js UI (optional)            |
 
 All services bind to `0.0.0.0` for LAN / Tailscale access.
 
@@ -323,16 +324,16 @@ All services bind to `0.0.0.0` for LAN / Tailscale access.
 
 ## Privacy Threat Model
 
-| Threat | Mitigation |
-|---|---|
-| Search engine logs your query | SearXNG is self-hosted with zero logs; query arrives encrypted |
-| MCP server sees your query | Server only sees Poseidon commitment hash, not plaintext |
-| Payment linked to query | Semaphore nullifiers unlink wallet from search events |
-| Network observer sees traffic | 3-hop onion routing; each relay knows only prev/next hop |
-| Storage provider reads history | Fileverse entries encrypted with user's wallet key |
-| Relay operator tampers | Onchain reputation tracking; bad actors lose score |
-| Replay attack | Nullifiers stored onchain; used nullifiers are rejected |
-| Result manipulation | Result hash stored onchain for tamper-evident verification |
+| Threat                         | Mitigation                                                     |
+| ------------------------------ | -------------------------------------------------------------- |
+| Search engine logs your query  | SearXNG is self-hosted with zero logs; query arrives encrypted |
+| MCP server sees your query     | Server only sees Poseidon commitment hash, not plaintext       |
+| Payment linked to query        | Semaphore nullifiers unlink wallet from search events          |
+| Network observer sees traffic  | 3-hop onion routing; each relay knows only prev/next hop       |
+| Storage provider reads history | Fileverse entries encrypted with user's wallet key             |
+| Relay operator tampers         | Onchain reputation tracking; bad actors lose score             |
+| Replay attack                  | Nullifiers stored onchain; used nullifiers are rejected        |
+| Result manipulation            | Result hash stored onchain for tamper-evident verification     |
 
 ---
 

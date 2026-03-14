@@ -30,16 +30,36 @@ pnpm run:setup
 ```
 
 The interactive setup script will:
+
 1. Check prerequisites (node, pnpm, docker)
 2. Generate secp256k1 key pairs for all services
 3. Configure ports (defaults: SearXNG 8888, relays 4002–4004, MCP 3038)
-4. Optionally deploy smart contracts to a local Hardhat node
+4. Deploy smart contracts to Base Sepolia by default (local Hardhat is optional)
 5. Optionally enable x402 payments (Base Sepolia USDC)
 6. Write all `.env` files
 7. Start SearXNG, 3 relay nodes, search backend, Fileverse, and the MCP server
 8. Output the MCP wiring config for Claude Desktop / Cursor
 
 Once setup finishes, all services are running and the MCP config is saved to `mcp-config.json`.
+
+### Base Sepolia Deployment
+
+Contracts are expected to run on Base Sepolia for demos/judging.
+
+```bash
+cd packages/contracts
+export BASE_SEPOLIA_RPC_URL=https://sepolia.base.org
+export DEPLOYER_PRIVATE_KEY=0x<your-private-key>
+pnpm deploy
+```
+
+The deploy script prints BaseScan links for all deployed contracts.
+
+`private_search` now fails fast if RPC/contract configuration is missing or unavailable (no silent in-memory fallback). For local-only testing, set:
+
+```env
+MESHSEARCH_ALLOW_INMEMORY_FALLBACK=true
+```
 
 ---
 
@@ -78,6 +98,7 @@ node demo.mjs "what are zero knowledge proofs"
 ```
 
 **Get testnet tokens:**
+
 - ETH for gas: [alchemy.com/faucets/base-sepolia](https://www.alchemy.com/faucets/base-sepolia)
 - USDC: [faucet.circle.com](https://faucet.circle.com)
 
@@ -89,10 +110,10 @@ node demo.mjs "what are zero knowledge proofs"
 
 The server exposes three tools:
 
-| Tool | Description |
-|---|---|
+| Tool             | Description                                             |
+| ---------------- | ------------------------------------------------------- |
 | `private_search` | ZK-committed search with onion routing and x402 payment |
-| `get_history` | Retrieve + decrypt search history from Fileverse |
+| `get_history`    | Retrieve + decrypt search history from Fileverse        |
 | `compile_report` | Aggregate searches into an encrypted Fileverse document |
 
 ---
@@ -207,14 +228,14 @@ MeshSearch/
 
 ## Tech Stack
 
-| Layer | Tools |
-|---|---|
-| **ZK** | Semaphore v4 — Groth16 proofs, Poseidon hashing |
-| **Crypto** | `@noble/curves` secp256k1 ECDH, `@noble/hashes` HKDF + AES-256-GCM |
-| **Payments** | x402 (`@x402/core`, `@x402/evm`), USDC on Base Sepolia |
-| **Blockchain** | Solidity, Hardhat, ethers v6 |
-| **MCP** | `@modelcontextprotocol/sdk` — Streamable HTTP + stdio |
-| **Search** | SearXNG (self-hosted) |
-| **Storage** | Content-addressed encrypted file storage |
-| **Frontend** | Next.js, Tailwind |
-| **Monorepo** | pnpm workspaces, Turborepo |
+| Layer          | Tools                                                              |
+| -------------- | ------------------------------------------------------------------ |
+| **ZK**         | Semaphore v4 — Groth16 proofs, Poseidon hashing                    |
+| **Crypto**     | `@noble/curves` secp256k1 ECDH, `@noble/hashes` HKDF + AES-256-GCM |
+| **Payments**   | x402 (`@x402/core`, `@x402/evm`), USDC on Base Sepolia             |
+| **Blockchain** | Solidity, Hardhat, ethers v6                                       |
+| **MCP**        | `@modelcontextprotocol/sdk` — Streamable HTTP + stdio              |
+| **Search**     | SearXNG (self-hosted)                                              |
+| **Storage**    | Content-addressed encrypted file storage                           |
+| **Frontend**   | Next.js, Tailwind                                                  |
+| **Monorepo**   | pnpm workspaces, Turborepo                                         |
