@@ -195,18 +195,69 @@ export function writeX402Response(res: ServerResponse, result: X402Result): void
   }
 }
 
-// ─── ENS subscription check (kept for potential hook usage) ─────────────────
+// ─── ENS subscription check — real on-chain resolution + AccessControl ──────
 
-const subscribedNames = new Set<string>();
+import { resolveEnsName } from '../ens/client.js';
 
+const ACCESS_CONTROL_ABI = [
+  'function hasSubscription(string calldata ensName) external view returns (bool)',
+  'function getTier(string calldata ensName) external view returns (uint8)',
+];
+
+/**
+ * Check if an ENS name has an active subscription.
+ *
+ * 1. Forward-resolve the ENS name → Ethereum address via @ensdomains/ensjs (L1)
+ * 2. Query the AccessControl contract on Base Sepolia for subscription status
+ *
+ * Returns true only if the name resolves AND has an active subscription.
+ */
 export async function checkENSSubscription(
   ensName: string,
-  _rpcUrl: string,
-  _contractAddress: string,
+  rpcUrl: string,
+  contractAddress: string,
 ): Promise<boolean> {
   if (!ensName || !ensName.endsWith('.eth')) return false;
-  return subscribedNames.has(ensName);
+
+  // 1. Resolve ENS name on Ethereum mainnet
+  const resolvedAddress = await resolveEnsName(ensName);
+  if (!resolvedAddress) {
+    console.error(`[ens-sub] ENS name '${ensName}' does not resolve to any address`);
+    return false;
+  }
+
+  console.error(`[ens-sub] ${ensName} → ${resolvedAddress}`);
+
+  // 2. Check AccessControl contract for subscription tier
+  if (contractAddress === '0x0000000000000000000000000000000000000000') {
+    // No contract deployed — fall back to in-memory set for development
+    return subscribedNames.has(ensName);
+  }
+
+  try {
+    const { ethers } = await import('ethers');
+    const provider = new ethers.JsonRpcProvider(rpcUrl, undefined, {
+      staticNetwork: true,
+      batchMaxCount: 1,
+    });
+    const contract = new ethers.Contract(contractAddress, ACCESS_CONTROL_ABI, provider);
+    const hasSub: boolean = await Promise.race([
+      contract.hasSubscription(ensName),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('AccessControl query timed out')), 5000)
+      ),
+    ]);
+    return hasSub;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[ens-sub] AccessControl query failed for ${ensName}: ${msg}`);
+    // If contract is unreachable, fall back to in-memory for development
+    return subscribedNames.has(ensName);
+  }
 }
+
+// In-memory fallback for development (when AccessControl contract not deployed)
+const subscribedNames = new Set<string>();
 
 // Test helpers
 export const _testHelpers = {

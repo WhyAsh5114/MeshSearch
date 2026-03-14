@@ -5,15 +5,19 @@
  * 2. routeQuery() wraps the encrypted query in 3 onion layers — one per relay.
  * 3. Each relay decrypts its layer to get the next hop URL + inner payload.
  * 4. The innermost layer is the EncryptedQueryBlob for the search backend.
+ *
+ * ENS names are verified via @ensdomains/ensjs before building routes.
  */
 
 import type { RelayNode, RelayStatus, RoutingPath, EncryptedQueryBlob, SearchResponse, RelayRequest, OnionLayer } from '@meshsearch/types';
 import { hashResults, encryptOnionLayer } from '@meshsearch/crypto';
 import type { ServerConfig } from '../config.js';
+import { resolveEnsName } from '../ens/client.js';
 
 /**
  * Select the best 3 relay nodes for a routing path.
  * Uses the configured relay endpoints and their public keys.
+ * Verifies ENS names resolve on-chain for audit trail.
  */
 export async function selectRelays(config: ServerConfig): Promise<RoutingPath> {
   const relays: RelayNode[] = config.relayEndpoints.slice(0, 3).map((ep, i) => ({
@@ -33,6 +37,25 @@ export async function selectRelays(config: ServerConfig): Promise<RoutingPath> {
       ensName: `relay${relays.length + 1}.meshsearch.eth`,
     });
   }
+
+  // Verify ENS names in parallel (non-blocking — for audit trail)
+  const verifications = await Promise.allSettled(
+    relays.map(async (relay) => {
+      const address = await resolveEnsName(relay.ensName);
+      if (address) {
+        relay.operator = address as `0x${string}`;
+        console.error(`[routing] ENS verified: ${relay.ensName} → ${address}`);
+      } else {
+        console.error(`[routing] ENS unverified: ${relay.ensName} (name does not resolve)`);
+      }
+      return { ensName: relay.ensName, address };
+    })
+  );
+
+  const verifiedCount = verifications.filter(
+    v => v.status === 'fulfilled' && v.value.address !== null
+  ).length;
+  console.error(`[routing] ENS verification: ${verifiedCount}/${relays.length} relays verified`);
 
   return {
     hops: [relays[0], relays[1], relays[2]],

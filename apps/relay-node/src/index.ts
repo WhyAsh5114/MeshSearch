@@ -3,6 +3,7 @@
  *
  * Each relay node:
  * - Holds a secp256k1 private key
+ * - Has an ENS name that is verified on-chain at startup
  * - Receives an onion layer encrypted for its public key
  * - Decrypts ONLY its layer to learn:
  *     a) The next hop URL (next relay or search backend)
@@ -16,6 +17,10 @@ import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
 import type { RelayRequest, RelayResponse, OnionLayer } from '@meshsearch/types';
 import { decryptOnionLayer, getPublicKey } from '@meshsearch/crypto';
+import { createPublicClient, http } from 'viem';
+import { mainnet } from 'viem/chains';
+import { addEnsContracts } from '@ensdomains/ensjs';
+import { getAddressRecord } from '@ensdomains/ensjs/public';
 
 const app = new Hono();
 
@@ -27,12 +32,45 @@ if (!RELAY_PRIVATE_KEY) {
   console.error('FATAL: RELAY_PRIVATE_KEY is required. Generate with: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"');
 }
 
-// Health check — includes public key so registry can discover it
+// ─── ENS name verification at startup ───────────────────────────────────────
+
+let ensVerified = false;
+let ensResolvedAddress: string | null = null;
+
+async function verifyEnsName(): Promise<void> {
+  if (!ENS_NAME.endsWith('.eth')) {
+    console.warn(`[ens] Relay ENS name '${ENS_NAME}' does not end with .eth — skipping verification`);
+    return;
+  }
+
+  try {
+    const ensClient = createPublicClient({
+      chain: addEnsContracts(mainnet),
+      transport: http(process.env.ENS_RPC_URL || undefined),
+    });
+
+    const result = await getAddressRecord(ensClient, { name: ENS_NAME });
+    if (result?.value) {
+      ensResolvedAddress = result.value;
+      ensVerified = true;
+      console.log(`[ens] Verified: ${ENS_NAME} → ${ensResolvedAddress}`);
+    } else {
+      console.warn(`[ens] ${ENS_NAME} does not resolve to any address (name may not be registered)`);
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[ens] ENS verification failed (non-fatal): ${msg}`);
+  }
+}
+
+// Health check — includes public key and ENS verification status
 app.get('/health', (c) => {
   const publicKey = RELAY_PRIVATE_KEY ? getPublicKey(RELAY_PRIVATE_KEY) : 'missing';
   return c.json({
     status: 'active',
     ensName: ENS_NAME,
+    ensVerified,
+    ensResolvedAddress,
     publicKey,
     timestamp: Date.now(),
   });
@@ -151,7 +189,11 @@ const stats = {
 // Export for testing
 export { app };
 
-// Start server
+// Start server + verify ENS name
 serve({ fetch: app.fetch, port: PORT }, () => {
   console.log(`Relay node ${ENS_NAME} running on port ${PORT}`);
+  // Fire-and-forget ENS verification on startup
+  verifyEnsName().catch((err) => {
+    console.warn(`[ens] Startup verification error: ${err}`);
+  });
 });

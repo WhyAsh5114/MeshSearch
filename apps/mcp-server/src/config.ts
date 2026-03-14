@@ -19,6 +19,8 @@ export interface ServerConfig {
   fileverseApiUrl: string;
   /** RPC URL for Base Sepolia (or local Hardhat) */
   rpcUrl: string;
+  /** RPC URL for Ethereum mainnet ENS resolution */
+  ensRpcUrl: string;
   /** Semaphore identity secret (for proof generation) */
   semaphoreSecret: string;
   /** Contract addresses */
@@ -63,6 +65,7 @@ export function loadConfig(): ServerConfig {
     backendPublicKey: env('BACKEND_PUBLIC_KEY', ''),
     fileverseApiUrl: env('FILEVERSE_API_URL', 'http://localhost:4005'),
     rpcUrl: env('RPC_URL', 'http://localhost:8545'),
+    ensRpcUrl: env('ENS_RPC_URL', ''),
     semaphoreSecret: env('SEMAPHORE_SECRET', 'meshsearch-dev-identity-secret'),
     contracts: {
       nodeRegistry: env('NODE_REGISTRY_ADDRESS', '0x0000000000000000000000000000000000000000'),
