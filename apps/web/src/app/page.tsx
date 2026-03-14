@@ -1,622 +1,252 @@
-"use client";
-
-import { useChat } from "@ai-sdk/react";
+import Link from "next/link";
 import {
-  DefaultChatTransport,
-  lastAssistantMessageIsCompleteWithToolCalls,
-} from "ai";
-import { useState, useRef, useEffect } from "react";
-import { useConnect, useDisconnect, useAccount } from "wagmi";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  Search,
-  Wallet,
+  ArrowRight,
   Shield,
   Zap,
-  ExternalLink,
-  Send,
-  Loader2,
+  Route,
+  FileLock2,
+  Server,
   CheckCircle2,
-  AlertCircle,
-  Lock,
-  Globe,
-  Clock,
-  Hash,
+  Wallet,
+  Bot,
 } from "lucide-react";
-import ReactMarkdown from "react-markdown";
-import { PaymentHandler } from "@/components/payment-handler";
-import { SettingsDialog, loadLLMConfig } from "@/components/settings-dialog";
-import type { ChatMessage, ChatTools } from "./api/chat/route";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 
-type ToolOutput = ChatTools["private_search"]["output"];
+const features = [
+  {
+    icon: Shield,
+    title: "ZK-Committed Queries",
+    description:
+      "Queries are committed client-side with zero-knowledge proofs before leaving your device.",
+  },
+  {
+    icon: Route,
+    title: "3-Hop Onion Routing",
+    description:
+      "Traffic flows through ENS-named relays to create an auditable privacy path for every search.",
+  },
+  {
+    icon: Zap,
+    title: "x402 Micropayments",
+    description:
+      "Per-search USDC payments settle on Base Sepolia with no account-based identity required.",
+  },
+  {
+    icon: FileLock2,
+    title: "Encrypted History",
+    description:
+      "Search history is encrypted and stored on Fileverse so only your wallet can decrypt it.",
+  },
+];
 
-type AddToolOutputFn = (opts:
-  | { tool: "private_search"; toolCallId: string; output: ToolOutput }
-  | { state: "output-error"; tool: "private_search"; toolCallId: string; errorText: string }
-) => void;
+const toolRows = [
+  {
+    name: "private_search",
+    description: "ZK-committed search with onion routing and x402 payment",
+  },
+  {
+    name: "get_history",
+    description: "Retrieve and decrypt search history from Fileverse",
+  },
+  {
+    name: "compile_report",
+    description: "Aggregate searches into an encrypted Fileverse document",
+  },
+];
 
-// Stores the last search results so the LLM can reference them on follow-ups
-const searchResultsRef: { current: { query: string; results: string } | null } = { current: null };
+const stack = [
+  "MCP server for AI agents",
+  "SearXNG search backend",
+  "Base Sepolia smart contracts",
+  "Fileverse encrypted storage",
+  "Wallet-native web app",
+];
 
-export default function Home() {
-  const [input, setInput] = useState("");
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const { connectors, connect } = useConnect();
-  const { disconnect } = useDisconnect();
-  const { address, isConnected } = useAccount();
-
-  const [error, setError] = useState<string | null>(null);
-
-  const { messages, sendMessage, addToolOutput, status } =
-    useChat<ChatMessage>({
-      transport: new DefaultChatTransport({
-        api: "/api/chat",
-        body: () => {
-          const cfg = loadLLMConfig();
-          const llmConfig: Record<string, string> = {};
-          if (cfg.apiKey) llmConfig.apiKey = cfg.apiKey;
-          if (cfg.baseURL) llmConfig.baseURL = cfg.baseURL;
-          if (cfg.model) llmConfig.model = cfg.model;
-          return {
-            ...(Object.keys(llmConfig).length > 0 ? { llmConfig } : {}),
-            ...(searchResultsRef.current ? { lastSearchResults: searchResultsRef.current } : {}),
-          };
-        },
-      }),
-      sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
-      onError(err) {
-        console.error("[useChat] error:", err);
-        setError(err.message || String(err));
-      },
-    });
-
-  const isLoading = status === "submitted" || status === "streaming";
-
-  // Auto-scroll
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages]);
-
-  const handleSend = () => {
-    const q = input.trim();
-    if (!q || isLoading) return;
-    setError(null);
-    sendMessage({ text: q });
-    setInput("");
-  };
-
+export default function HomePage() {
   return (
-    <div className="flex flex-col h-screen">
-      {/* Header */}
-      <header className="border-b border-border px-4 py-3 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="h-8 w-8 rounded-lg bg-primary/20 flex items-center justify-center">
-            <Shield className="h-4 w-4 text-primary" />
+    <main className="min-h-screen bg-background text-foreground">
+      <section className="border-b border-border bg-card">
+        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-4 px-6 py-4">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary">
+              <Shield className="h-4 w-4 text-primary-foreground" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold leading-none">MeshSearch</p>
+              <p className="text-xs text-muted-foreground">
+                Private Search Infrastructure for AI
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-lg font-semibold leading-none">MeshSearch</h1>
-            <p className="text-xs text-muted-foreground">
-              Private AI Search • x402 Micropayments
-            </p>
+          <div className="flex gap-2">
+            <Button asChild variant="outline">
+              <Link href="/chat">
+                Open Chat
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+            </Button>
           </div>
         </div>
+      </section>
 
-        <div className="flex items-center gap-2">
-          <SettingsDialog />
-          {isConnected ? (
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className="gap-1.5 font-mono text-xs">
-                <div className="h-2 w-2 rounded-full bg-green-500" />
-                {address?.slice(0, 6)}...{address?.slice(-4)}
-              </Badge>
-              <Button variant="ghost" size="sm" onClick={() => disconnect()}>
-                Disconnect
+      <section className="mx-auto w-full max-w-6xl px-6 pb-12 pt-10 md:pb-16 md:pt-14">
+        <div className="grid items-start gap-8 lg:grid-cols-[1.2fr_0.8fr]">
+          <div className="space-y-6">
+            <Badge
+              variant="secondary"
+              className="rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.12em]"
+            >
+              Cryptographic Privacy, Not Promises
+            </Badge>
+            <h1 className="max-w-2xl text-4xl font-semibold leading-tight tracking-tight text-balance md:text-6xl md:leading-[1.05]">
+              Private web search for AI agents and humans.
+            </h1>
+            <p className="max-w-2xl text-base text-muted-foreground md:text-lg">
+              MeshSearch is an MCP-powered search layer where queries are
+              protected with zero-knowledge commitments, routed through relay
+              hops, paid with x402 USDC micropayments, and stored as encrypted
+              history.
+            </p>
+
+            <div className="flex flex-wrap gap-3 pt-2">
+              <Button asChild size="lg">
+                <Link href="/chat">
+                  Start Private Search
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </Button>
+              <Button asChild size="lg" variant="outline">
+                <Link href="https://x402.org" target="_blank" rel="noreferrer">
+                  Learn x402
+                </Link>
               </Button>
             </div>
-          ) : (
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-2"
-              onClick={() => connect({ connector: connectors[0] })}
-            >
-              <Wallet className="h-3.5 w-3.5" />
-              Connect Wallet
-            </Button>
-          )}
-        </div>
-      </header>
 
-      {/* Messages */}
-      <ScrollArea className="flex-1" ref={scrollRef}>
-        <div className="max-w-3xl mx-auto px-4 py-6 space-y-4">
-          {messages.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-24 gap-6">
-              <div className="h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center">
-                <Search className="h-8 w-8 text-primary" />
-              </div>
-              <div className="text-center space-y-2">
-                <h2 className="text-xl font-semibold">Private AI Search</h2>
-                <p className="text-muted-foreground text-sm max-w-md">
-                  Search the web privately. Queries are committed with ZK
-                  proofs, routed through 3 onion relays, and paid with USDC
-                  micropayments.
-                </p>
-              </div>
-              <div className="flex gap-3">
-                {[
-                  "What are zero knowledge proofs?",
-                  "Ethereum privacy solutions",
-                  "x402 payment protocol",
-                ].map((q) => (
-                  <Button
-                    key={q}
-                    variant="outline"
-                    size="sm"
-                    className="text-xs"
-                    onClick={() => {
-                      sendMessage({ text: `Search for: ${q}` });
-                    }}
-                  >
-                    {q}
-                  </Button>
-                ))}
-              </div>
-              <div className="flex gap-6 text-xs text-muted-foreground pt-4">
-                <span className="flex items-center gap-1.5">
-                  <Lock className="h-3 w-3" /> ZK Proofs
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <Shield className="h-3 w-3" /> Onion Routing
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <Zap className="h-3 w-3" /> x402 Payments
-                </span>
-              </div>
-            </div>
-          )}
-
-          {messages.map((message) => (
-            <div
-              key={message.id}
-              className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
-            >
-              <div
-                className={`max-w-[85%] ${
-                  message.role === "user"
-                    ? "bg-primary text-primary-foreground rounded-2xl rounded-br-md px-4 py-2.5"
-                    : "space-y-3"
-                }`}
-              >
-                {message.parts?.map((part, i) => {
-                  switch (part.type) {
-                    case "text":
-                      if (message.role === "user") {
-                        return <p key={i}>{part.text}</p>;
-                      }
-                      return (
-                        <div
-                          key={i}
-                          className="prose prose-invert prose-sm max-w-none [&_a]:text-primary"
-                        >
-                          <ReactMarkdown>{part.text}</ReactMarkdown>
-                        </div>
-                      );
-
-                    case "tool-private_search":
-                      return (
-                        <ToolResultCard
-                          key={part.toolCallId}
-                          part={part}
-                          addToolOutput={addToolOutput}
-                          isConnected={isConnected}
-                          onConnect={() =>
-                            connect({ connector: connectors[0] })
-                          }
-                          onSearchComplete={(query, results) => {
-                            searchResultsRef.current = { query, results };
-                          }}
-                        />
-                      );
-
-                    default:
-                      return null;
-                  }
-                })}
-              </div>
-            </div>
-          ))}
-
-          {isLoading && (
-            <div className="flex justify-start">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Thinking...
-              </div>
-            </div>
-          )}
-
-          {(status === "error" || error) && (
-            <div className="flex justify-start">
-              <Card className="border-destructive/30 max-w-[85%]">
-                <CardContent className="p-4 flex items-center gap-3">
-                  <AlertCircle className="h-4 w-4 text-destructive shrink-0" />
-                  <div className="text-sm">
-                    <p className="font-medium text-destructive">Error</p>
-                    <p className="text-muted-foreground text-xs mt-1">
-                      {error || "Something went wrong. Check your LLM settings."}
+            <div className="grid gap-3 pt-3 sm:grid-cols-3">
+              <Card>
+                <CardContent className="flex items-center gap-3 p-4">
+                  <Wallet className="h-4 w-4 text-primary" />
+                  <div>
+                    <p className="text-sm font-medium">Wallet Native</p>
+                    <p className="text-xs text-muted-foreground">
+                      Connect and pay per search
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="flex items-center gap-3 p-4">
+                  <Bot className="h-4 w-4 text-primary" />
+                  <div>
+                    <p className="text-sm font-medium">MCP Tooling</p>
+                    <p className="text-xs text-muted-foreground">
+                      Works with AI agents
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="flex items-center gap-3 p-4">
+                  <Server className="h-4 w-4 text-primary" />
+                  <div>
+                    <p className="text-sm font-medium">Self-Hostable</p>
+                    <p className="text-xs text-muted-foreground">
+                      Runs in your own stack
                     </p>
                   </div>
                 </CardContent>
               </Card>
             </div>
-          )}
-        </div>
-      </ScrollArea>
-
-      {/* Input */}
-      <div className="border-t border-border p-4 shrink-0">
-        <div className="max-w-3xl mx-auto flex gap-2">
-          <input
-            className="flex-1 bg-muted rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground"
-            placeholder={
-              isConnected
-                ? "Ask anything — searches are private and paid with USDC..."
-                : "Connect your wallet to search with x402 payments..."
-            }
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleSend();
-              }
-            }}
-          />
-          <Button
-            onClick={handleSend}
-            disabled={!input.trim() || isLoading}
-            size="icon"
-          >
-            <Send className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Tool Result Card ───────────────────────────────────────────────────────
-
-type PrivateSearchPart = {
-  type: "tool-private_search";
-  toolCallId: string;
-  state: string;
-  input?: { query?: string; paymentSignature?: string };
-  output?: ToolOutput;
-};
-
-function ToolResultCard({
-  part,
-  addToolOutput,
-  isConnected,
-  onConnect,
-  onSearchComplete,
-}: {
-  part: PrivateSearchPart;
-  addToolOutput: AddToolOutputFn;
-  isConnected: boolean;
-  onConnect: () => void;
-  onSearchComplete?: (query: string, results: string) => void;
-}) {
-  // Still executing
-  if (part.state !== "output-available" || !part.output) {
-    return (
-      <Card className="border-border/50 bg-muted/30">
-        <CardContent className="p-4 flex items-center gap-3">
-          <Loader2 className="h-4 w-4 animate-spin text-primary" />
-          <span className="text-sm text-muted-foreground">
-            Searching privately for &ldquo;{part.input?.query}&rdquo;...
-          </span>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  const { output } = part;
-
-  // Payment required — show payment prompt
-  if (output.status === "payment-required") {
-    return (
-      <PaymentCard
-        query={output.query || part.input?.query || ""}
-        paymentRequired={output.paymentRequired || ""}
-        toolCallId={part.toolCallId}
-        addToolOutput={addToolOutput}
-        isConnected={isConnected}
-        onConnect={onConnect}
-        onSearchComplete={onSearchComplete}
-      />
-    );
-  }
-
-  // Error
-  if (output.status === "error") {
-    return (
-      <Card className="border-destructive/30 bg-destructive/5">
-        <CardContent className="p-4 flex items-center gap-3">
-          <AlertCircle className="h-4 w-4 text-destructive shrink-0" />
-          <span className="text-sm">{output.error}</span>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  // Payment signed — re-calling with signature
-  if (output.status === "payment-signed") {
-    return (
-      <Card className="border-border/50 bg-muted/30">
-        <CardContent className="p-4 flex items-center gap-3">
-          <Loader2 className="h-4 w-4 animate-spin text-primary" />
-          <span className="text-sm text-muted-foreground">
-            Payment signed, completing search...
-          </span>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  // Success — show results with settlement info
-  return (
-    <Card className="border-primary/20 bg-muted/50">
-      <CardContent className="p-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <CheckCircle2 className="h-4 w-4 text-green-500" />
-            <span className="text-sm font-medium">Search Complete</span>
           </div>
-          {output.txHash && (
-            <a
-              href={`https://sepolia.basescan.org/tx/${output.txHash}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1 text-xs text-primary hover:underline"
-            >
-              View on BaseScan
-              <ExternalLink className="h-3 w-3" />
-            </a>
-          )}
-        </div>
 
-        {/* Privacy pipeline */}
-        <div className="flex flex-wrap gap-2">
-          <Badge variant="secondary" className="text-[10px] gap-1">
-            <Lock className="h-2.5 w-2.5" /> ZK Proof
-          </Badge>
-          <Badge variant="secondary" className="text-[10px] gap-1">
-            <Shield className="h-2.5 w-2.5" /> 3-Hop Relay
-          </Badge>
-          <Badge variant="secondary" className="text-[10px] gap-1">
-            <Zap className="h-2.5 w-2.5" /> USDC Settled
-          </Badge>
-        </div>
-
-        {/* Parsed search results */}
-        {output.results && (
-          <div className="border-t border-border pt-3 space-y-3">
-            <SearchResults raw={output.results} />
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-// ─── Search Results Parser ──────────────────────────────────────────────────
-
-type ParsedResult = {
-  title: string;
-  url: string;
-  snippet: string;
-};
-
-type ParsedMetadata = {
-  totalResults?: string;
-  searchTime?: string;
-  resultHash?: string;
-  routing?: string;
-};
-
-function parseSearchResults(raw: string): {
-  results: ParsedResult[];
-  metadata: ParsedMetadata;
-} {
-  const results: ParsedResult[] = [];
-  const metadata: ParsedMetadata = {};
-
-  // Split into results section and metadata section
-  const [resultsSection, metaSection] = raw.split(/\n---\n/);
-
-  // Parse each numbered result:
-  // 1. **Title**
-  //    https://url
-  //    Snippet text
-  const resultBlocks = (resultsSection || "")
-    .replace(/^#.*\n\n?/, "") // strip "# Search Results" heading
-    .split(/\n\n(?=\d+\.\s)/)
-    .filter((b) => b.trim());
-
-  for (const block of resultBlocks) {
-    const lines = block.split("\n").map((l) => l.trim());
-    // First line: "1. **Title**" or "1. Title"
-    const titleMatch = lines[0]?.match(/^\d+\.\s+\*\*(.+?)\*\*$/);
-    const title = titleMatch?.[1] || lines[0]?.replace(/^\d+\.\s+/, "") || "";
-    // Second line: URL
-    const url = lines[1] || "";
-    // Remaining: snippet
-    const snippet = lines.slice(2).join(" ").trim();
-    if (title) results.push({ title, url, snippet });
-  }
-
-  // Parse metadata
-  if (metaSection) {
-    for (const line of metaSection.split("\n")) {
-      const clean = line.replace(/^\*\*Metadata\*\*\s*/, "").trim();
-      if (clean.startsWith("Results:")) metadata.totalResults = clean.replace("Results: ", "");
-      else if (clean.startsWith("Search time:")) metadata.searchTime = clean.replace("Search time: ", "");
-      else if (clean.startsWith("Result hash:")) metadata.resultHash = clean.replace("Result hash: ", "");
-      else if (clean.startsWith("Routing:")) metadata.routing = clean.replace("Routing: ", "");
-    }
-  }
-
-  return { results, metadata };
-}
-
-function SearchResults({ raw }: { raw: string }) {
-  const { results, metadata } = parseSearchResults(raw);
-
-  if (results.length === 0) {
-    return (
-      <div className="prose prose-invert prose-sm max-w-none [&_a]:text-primary">
-        <ReactMarkdown>{raw}</ReactMarkdown>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-3">
-      {results.map((r, i) => (
-        <div key={i} className="rounded-lg bg-background/60 border border-border/40 p-3 space-y-1.5">
-          <div className="flex items-start gap-2">
-            <Globe className="h-3.5 w-3.5 text-muted-foreground mt-0.5 shrink-0" />
-            <div className="min-w-0">
-              {r.url ? (
-                <a
-                  href={r.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm font-medium text-primary hover:underline leading-tight block"
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">MCP Tools</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {toolRows.map((tool) => (
+                <div
+                  key={tool.name}
+                  className="rounded-lg border border-border bg-muted p-3"
                 >
-                  {r.title}
-                </a>
-              ) : (
-                <span className="text-sm font-medium leading-tight block">{r.title}</span>
-              )}
-              {r.url && (
-                <span className="text-[11px] text-muted-foreground truncate block">
-                  {r.url}
-                </span>
-              )}
-            </div>
-          </div>
-          {r.snippet && (
-            <p className="text-xs text-muted-foreground leading-relaxed pl-5.5">
-              {r.snippet}
+                  <p className="font-mono text-xs text-primary">{tool.name}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {tool.description}
+                  </p>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        </div>
+      </section>
+
+      <section className="border-y border-border bg-card">
+        <div className="mx-auto w-full max-w-6xl px-6 py-12 md:py-14">
+          <div className="mb-5 flex items-center gap-2">
+            <div className="h-1.5 w-1.5 rounded-full bg-primary" />
+            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+              Core Capabilities
             </p>
-          )}
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            {features.map((feature) => {
+              const Icon = feature.icon;
+              return (
+                <Card key={feature.title}>
+                  <CardContent className="p-5">
+                    <div className="mb-3 inline-flex h-9 w-9 items-center justify-center rounded-lg bg-muted">
+                      <Icon className="h-4 w-4 text-primary" />
+                    </div>
+                    <h3 className="text-lg font-semibold">{feature.title}</h3>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      {feature.description}
+                    </p>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
         </div>
-      ))}
+      </section>
 
-      {/* Metadata footer */}
-      {(metadata.searchTime || metadata.routing) && (
-        <div className="flex flex-wrap items-center gap-3 pt-1 text-[10px] text-muted-foreground">
-          {metadata.totalResults && (
-            <span className="flex items-center gap-1">
-              <Search className="h-2.5 w-2.5" />
-              {metadata.totalResults} results
-            </span>
-          )}
-          {metadata.searchTime && (
-            <span className="flex items-center gap-1">
-              <Clock className="h-2.5 w-2.5" />
-              {metadata.searchTime}
-            </span>
-          )}
-          {metadata.routing && (
-            <span className="flex items-center gap-1">
-              <Shield className="h-2.5 w-2.5" />
-              {metadata.routing}
-            </span>
-          )}
-          {metadata.resultHash && (
-            <span className="flex items-center gap-1">
-              <Hash className="h-2.5 w-2.5" />
-              {metadata.resultHash.slice(0, 12)}...
-            </span>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
+      <section className="mx-auto w-full max-w-6xl px-6 py-12 md:py-16">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Deployment Stack Snapshot</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {stack.map((item) => (
+              <div
+                key={item}
+                className="inline-flex items-center gap-2 rounded-md border border-border bg-muted px-3 py-2 text-sm text-muted-foreground"
+              >
+                <CheckCircle2 className="h-3.5 w-3.5 text-primary" />
+                <span>{item}</span>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
 
-// ─── Payment Card ───────────────────────────────────────────────────────────
-
-function PaymentCard({
-  query,
-  paymentRequired,
-  toolCallId,
-  addToolOutput,
-  isConnected,
-  onConnect,
-  onSearchComplete,
-}: {
-  query: string;
-  paymentRequired: string;
-  toolCallId: string;
-  addToolOutput: AddToolOutputFn;
-  isConnected: boolean;
-  onConnect: () => void;
-  onSearchComplete?: (query: string, results: string) => void;
-}) {
-  // Decode payment info
-  let price = "$0.001";
-  try {
-    const decoded = JSON.parse(atob(paymentRequired));
-    const req0 = decoded.paymentRequirements?.[0] || decoded.accepts?.[0];
-    const amount = req0?.maxAmountRequired || req0?.amount || "1000";
-    price = `$${(Number(amount) / 1_000_000).toFixed(4)}`;
-  } catch {}
-
-  return (
-    <Card className="border-yellow-500/30 bg-yellow-500/5">
-      <CardContent className="p-4 space-y-3">
-        <div className="flex items-center gap-2">
-          <Wallet className="h-4 w-4 text-yellow-500" />
-          <span className="text-sm font-medium">Payment Required</span>
-          <Badge variant="outline" className="text-yellow-500 border-yellow-500/30 text-[10px]">
-            {price} USDC
-          </Badge>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Searching for &ldquo;{query}&rdquo; requires a USDC micropayment on
-          Base Sepolia. The payment is settled on-chain with no identity linked.
-        </p>
-        {!isConnected ? (
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-2"
-            onClick={onConnect}
-          >
-            <Wallet className="h-3.5 w-3.5" />
-            Connect Wallet to Pay
+        <div className="mt-8 flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border bg-card p-5">
+          <div>
+            <p className="text-base font-semibold">
+              Ready to run a private paid search?
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Open the chat app, connect your wallet, and execute your first
+              x402-backed query.
+            </p>
+          </div>
+          <Button asChild size="lg">
+            <Link href="/chat">
+              Go To Chat
+              <ArrowRight className="h-4 w-4" />
+            </Link>
           </Button>
-        ) : (
-          <PaymentHandler
-            query={query}
-            paymentRequired={paymentRequired}
-            toolCallId={toolCallId}
-            addToolOutput={addToolOutput}
-            onSearchComplete={onSearchComplete}
-          />
-        )}
-      </CardContent>
-    </Card>
+        </div>
+      </section>
+    </main>
   );
 }
