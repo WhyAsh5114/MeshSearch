@@ -26,6 +26,7 @@ import {
 import { verifyZKProof, checkNullifier, recordNullifier, storeResultHashOnchain } from '../middleware/zk-verification.js';
 import { selectRelays, routeQuery } from '../relay/routing.js';
 import { saveSearchRecord } from '../fileverse/client.js';
+import { isBitGoEnabled, loadBitGoConfig, generateFreshAddress } from '../bitgo/client.js';
 import type { ServerConfig } from '../config.js';
 
 export function registerPrivateSearchTool(server: McpServer, config: ServerConfig) {
@@ -107,6 +108,22 @@ export function registerPrivateSearchTool(server: McpServer, config: ServerConfi
         config.contracts.nullifierRegistry
       );
 
+      // 7b. BitGo stealth-address receipt (if enabled)
+      let bitgoReceiveAddress: string | undefined;
+      if (isBitGoEnabled()) {
+        try {
+          const bitgoConfig = loadBitGoConfig();
+          const { address } = await generateFreshAddress(
+            bitgoConfig,
+            `search-${routingPath.routingId}`,
+          );
+          bitgoReceiveAddress = address;
+          log(`BitGo fresh address: ${address}`);
+        } catch (err) {
+          log(`BitGo address generation failed: ${err instanceof Error ? err.message : err}`);
+        }
+      }
+
       // 8. Save query to Fileverse (fire-and-forget, no response data)
       saveSearchRecord(
         {
@@ -133,6 +150,7 @@ export function registerPrivateSearchTool(server: McpServer, config: ServerConfi
         `Nullifier: ${nullifier.slice(0, 16)}...`,
         `Routing: ${routingPath.hops.map(h => h.ensName).join(' → ')}`,
         `Storage: saving in background`,
+        ...(bitgoReceiveAddress ? [`BitGo stealth address: ${bitgoReceiveAddress}`] : []),
       ].join('\n');
 
       log(`done — returning ${searchResponse.totalResults} results`);
