@@ -18,9 +18,13 @@ import { decryptQueryAtBackend, hashResults } from '@meshsearch/crypto';
 const app = new Hono();
 
 const PORT = parseInt(process.env.PORT || '4001', 10);
-const BACKEND_PRIVATE_KEY = process.env.BACKEND_PRIVATE_KEY || 'dev-backend-private-key';
+const BACKEND_PRIVATE_KEY = process.env.BACKEND_PRIVATE_KEY || '';
 const SEARXNG_URL = process.env.SEARXNG_URL || 'http://localhost:8888';
 const BRAVE_API_KEY = process.env.BRAVE_API_KEY || '';
+
+if (!BACKEND_PRIVATE_KEY) {
+  console.error('FATAL: BACKEND_PRIVATE_KEY is required. Generate with: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"');
+}
 
 // Health check
 app.get('/health', (c) => {

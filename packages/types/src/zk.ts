@@ -1,48 +1,53 @@
 /**
- * ZK proof and commitment types used across the system
+ * ZK proof and commitment types used across the system.
+ * Aligned with Semaphore v4 protocol and secp256k1 ECDH.
  */
 
 /** A hex-encoded string (0x prefixed) */
 export type HexString = `0x${string}`;
 
-/** Poseidon hash commitment of a query + salt */
+/** Query commitment using SHA-256 hiding commitment */
 export interface QueryCommitment {
-  /** The Poseidon hash of (query, salt) */
+  /** SHA-256(query || salt) — hides the query */
   commitment: HexString;
-  /** Random salt used in the commitment */
+  /** Random 32-byte salt */
   salt: HexString;
-  /** The raw query plaintext (only kept client-side) */
+  /** The raw query plaintext (NEVER sent to the server) */
   query: string;
 }
 
-/** Semaphore nullifier for payment unlinking */
-export interface Nullifier {
-  /** The nullifier hash */
-  nullifierHash: HexString;
-  /** Semaphore identity commitment */
-  identityCommitment: HexString;
+/**
+ * Semaphore v4 proof output — direct from @semaphore-protocol/core generateProof().
+ * All numeric fields are NumericString (decimal string representation of bigints).
+ */
+export interface SemaphoreProof {
+  merkleTreeDepth: number;
+  merkleTreeRoot: string;
+  nullifier: string;
+  message: string;
+  scope: string;
+  points: [string, string, string, string, string, string, string, string];
 }
 
-/** ZK authorization proof */
-export interface ZKProof {
-  /** Commitment to the query */
-  commitment: HexString;
-  /** Nullifier hash */
-  nullifierHash: HexString;
-  /** Proof data (packed) */
-  proof: HexString;
-  /** Merkle tree root (group membership) */
-  merkleTreeRoot: HexString;
-  /** External nullifier (search context) */
-  externalNullifier: HexString;
-}
-
-/** Encrypted query blob for relay routing */
+/** Encrypted query blob for relay routing (real secp256k1 ECDH) */
 export interface EncryptedQueryBlob {
-  /** Asymmetrically encrypted query (only search backend can decrypt) */
+  /** AES-256-GCM ciphertext (hex) */
   ciphertext: string;
-  /** Ephemeral public key used for encryption */
+  /** Compressed secp256k1 ephemeral public key (hex, 33 bytes) */
   ephemeralPublicKey: string;
-  /** Nonce/IV */
+  /** AES-GCM nonce/IV (hex, 12 bytes) */
+  nonce: string;
+}
+
+/**
+ * An onion-encrypted relay layer.
+ * The MCP server wraps the query in 3 layers; each relay peels one.
+ */
+export interface OnionLayer {
+  /** AES-256-GCM ciphertext of the inner payload (hex) */
+  ciphertext: string;
+  /** Compressed secp256k1 ephemeral public key for ECDH (hex) */
+  ephemeralPublicKey: string;
+  /** AES-GCM nonce (hex) */
   nonce: string;
 }

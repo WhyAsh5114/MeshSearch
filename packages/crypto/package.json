@@ -19,7 +19,9 @@
   },
   "dependencies": {
     "@meshsearch/types": "workspace:*",
-    "@noble/hashes": "^1.6.0"
+    "@noble/curves": "^2.0.0",
+    "@noble/hashes": "^1.6.0",
+    "@semaphore-protocol/core": "^4.14.0"
   },
   "devDependencies": {
     "typescript": "^5.7.0",

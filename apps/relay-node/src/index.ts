@@ -1,29 +1,39 @@
 /**
- * Relay Node — Lightweight HTTP server for encrypted query forwarding.
+ * Relay Node — Onion-decrypting HTTP relay for encrypted query forwarding.
  *
  * Each relay node:
- * - Receives an encrypted blob from the previous hop
- * - Cannot read the query (encryption is layered)
- * - Forwards to the next hop or search backend
- * - Reports success/failure for reputation tracking
- * - Earns a share of the x402 payment
+ * - Holds a secp256k1 private key
+ * - Receives an onion layer encrypted for its public key
+ * - Decrypts ONLY its layer to learn:
+ *     a) The next hop URL (next relay or search backend)
+ *     b) The inner payload (still encrypted for the next hop)
+ * - Forwards the inner payload to the next hop
+ * - Cannot see the plaintext query or the full route
  */
 
 import 'dotenv/config';
 import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
-import type { RelayRequest, RelayResponse } from '@meshsearch/types';
+import type { RelayRequest, RelayResponse, OnionLayer } from '@meshsearch/types';
+import { decryptOnionLayer, getPublicKey } from '@meshsearch/crypto';
 
 const app = new Hono();
 
 const ENS_NAME = process.env.RELAY_ENS_NAME || 'relay1.meshsearch.eth';
 const PORT = parseInt(process.env.PORT || '4002', 10);
+const RELAY_PRIVATE_KEY = process.env.RELAY_PRIVATE_KEY || '';
 
-// Health check
+if (!RELAY_PRIVATE_KEY) {
+  console.error('FATAL: RELAY_PRIVATE_KEY is required. Generate with: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"');
+}
+
+// Health check — includes public key so registry can discover it
 app.get('/health', (c) => {
+  const publicKey = RELAY_PRIVATE_KEY ? getPublicKey(RELAY_PRIVATE_KEY) : 'missing';
   return c.json({
     status: 'active',
     ensName: ENS_NAME,
+    publicKey,
     timestamp: Date.now(),
   });
 });
@@ -38,45 +48,87 @@ app.get('/status', (c) => {
   });
 });
 
-// Forward encrypted query to next hop
+/**
+ * POST /relay — Peel one onion layer and forward.
+ *
+ * Incoming: { routingId, onionLayer: OnionLayer, hopIndex }
+ *   - Decrypt onionLayer with this relay's private key
+ *   - Parse decrypted JSON: { nextHop, isLastHop, payload }
+ *   - If isLastHop: POST payload directly to nextHop (the search backend)
+ *   - Otherwise: POST { routingId, onionLayer: payload, hopIndex+1 } to nextHop
+ */
 app.post('/relay', async (c) => {
   const request = await c.req.json<RelayRequest>();
 
-  // Validate request structure
-  if (!request.routingId || !request.encryptedBlob || !request.nextHop) {
+  if (!request.routingId || !request.onionLayer) {
     stats.errorCount++;
     return c.json({ error: 'Invalid relay request' }, 400);
   }
 
   try {
-    // Forward to next hop (next relay or search backend)
-    const response = await fetch(`${request.nextHop}/relay`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        routingId: request.routingId,
-        encryptedBlob: request.encryptedBlob,
-        hopIndex: request.hopIndex + 1,
-        nextHop: '', // Next relay determines this from routing table
-        paymentProof: request.paymentProof,
-      } satisfies RelayRequest),
-    });
+    // 1. Decrypt our onion layer
+    const decrypted = await decryptOnionLayer(request.onionLayer, RELAY_PRIVATE_KEY);
+    const { nextHop, isLastHop, payload } = JSON.parse(decrypted) as {
+      nextHop: string;
+      isLastHop: boolean;
+      payload: OnionLayer | { encryptedQuery: unknown };
+    };
 
-    if (!response.ok) {
-      stats.errorCount++;
-      return c.json({
+    let downstreamResult: unknown;
+
+    if (isLastHop) {
+      // 2a. This is the last relay — forward directly to the search backend
+      const backendResponse = await fetch(nextHop, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!backendResponse.ok) {
+        stats.errorCount++;
+        return c.json({
+          routingId: request.routingId,
+          encryptedResult: '',
+          success: false,
+        } satisfies RelayResponse, 502);
+      }
+      downstreamResult = await backendResponse.json();
+    } else {
+      // 2b. Not the last relay — forward to the next relay with inner onion layer
+      const nextReq: RelayRequest = {
         routingId: request.routingId,
-        encryptedResult: '',
-        success: false,
-      } satisfies RelayResponse, 502);
+        onionLayer: payload as OnionLayer,
+        hopIndex: request.hopIndex + 1,
+      };
+      const relayResponse = await fetch(nextHop, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(nextReq),
+      });
+      if (!relayResponse.ok) {
+        stats.errorCount++;
+        return c.json({
+          routingId: request.routingId,
+          encryptedResult: '',
+          success: false,
+        } satisfies RelayResponse, 502);
+      }
+      const inner = await relayResponse.json() as RelayResponse;
+      if (!inner.success) {
+        stats.errorCount++;
+        return c.json({
+          routingId: request.routingId,
+          encryptedResult: '',
+          success: false,
+        } satisfies RelayResponse, 502);
+      }
+      downstreamResult = JSON.parse(inner.encryptedResult);
     }
 
-    const result = await response.json() as RelayResponse;
     stats.relayedCount++;
 
     return c.json({
       routingId: request.routingId,
-      encryptedResult: result.encryptedResult,
+      encryptedResult: JSON.stringify(downstreamResult),
       success: true,
     } satisfies RelayResponse);
   } catch (error) {

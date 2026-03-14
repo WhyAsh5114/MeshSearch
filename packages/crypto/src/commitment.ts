@@ -1,7 +1,10 @@
 /**
- * Poseidon-like query commitment using SHA-256 (portable, no WASM dependency).
- * In production, replace with a real Poseidon hash for ZK circuit compatibility.
- * Using @noble/hashes for audited, pure-JS crypto.
+ * Query commitment and result integrity hashing.
+ *
+ * Commitments: SHA-256(len(query) || query || salt) — a hiding, binding commitment
+ * with domain separation to prevent collision attacks.
+ *
+ * Semaphore proof generation is in ./semaphore.ts (real Groth16 circuit).
  */
 
 import { sha256 } from '@noble/hashes/sha256';
@@ -9,24 +12,29 @@ import { bytesToHex, randomBytes } from '@noble/hashes/utils';
 import type { HexString, QueryCommitment } from '@meshsearch/types';
 
 /**
- * Generate a random salt (32 bytes)
+ * Generate a cryptographically secure random 32-byte salt.
  */
 export function generateSalt(): HexString {
   return `0x${bytesToHex(randomBytes(32))}`;
 }
 
 /**
- * Create a query commitment: hash(query || salt)
- * The commitment hides the query — the server only sees the hash.
+ * Create a hiding commitment to a query: SHA-256(len(query) || query || salt).
+ * The commitment can be published without revealing the query.
+ * Length-prefixed to prevent delimiter-collision attacks.
  */
 export function createQueryCommitment(query: string, salt?: HexString): QueryCommitment {
   const actualSalt = salt ?? generateSalt();
   const saltBytes = hexToBytes(actualSalt);
   const queryBytes = new TextEncoder().encode(query);
 
-  const combined = new Uint8Array(queryBytes.length + saltBytes.length);
-  combined.set(queryBytes, 0);
-  combined.set(saltBytes, queryBytes.length);
+  const lenBuf = new Uint8Array(4);
+  new DataView(lenBuf.buffer).setUint32(0, queryBytes.length, false);
+
+  const combined = new Uint8Array(lenBuf.length + queryBytes.length + saltBytes.length);
+  combined.set(lenBuf, 0);
+  combined.set(queryBytes, lenBuf.length);
+  combined.set(saltBytes, lenBuf.length + queryBytes.length);
 
   const hash = sha256(combined);
   const commitment: HexString = `0x${bytesToHex(hash)}`;
@@ -35,7 +43,7 @@ export function createQueryCommitment(query: string, salt?: HexString): QueryCom
 }
 
 /**
- * Verify a query commitment matches a known query + salt
+ * Verify that a commitment matches a known query + salt.
  */
 export function verifyQueryCommitment(
   commitment: HexString,
@@ -47,27 +55,14 @@ export function verifyQueryCommitment(
 }
 
 /**
- * Hash a result set for onchain integrity proof
+ * Hash a result set for onchain integrity proof.
  */
 export function hashResults(resultsJson: string): HexString {
   const hash = sha256(new TextEncoder().encode(resultsJson));
   return `0x${bytesToHex(hash)}`;
 }
 
-/**
- * Generate a nullifier hash (simulated Semaphore nullifier)
- * In production, use actual Semaphore identity + external nullifier
- */
-export function generateNullifier(identitySecret: HexString, externalNullifier: HexString): HexString {
-  const combined = new TextEncoder().encode(`${identitySecret}:${externalNullifier}`);
-  const hash = sha256(combined);
-  return `0x${bytesToHex(hash)}`;
-}
-
-/**
- * Convert hex string to Uint8Array
- */
-function hexToBytes(hex: HexString): Uint8Array {
+function hexToBytes(hex: string): Uint8Array {
   const cleanHex = hex.startsWith('0x') ? hex.slice(2) : hex;
   const bytes = new Uint8Array(cleanHex.length / 2);
   for (let i = 0; i < cleanHex.length; i += 2) {

@@ -1,9 +1,23 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { app, store } from '../src/index.js';
+import { describe, it, expect, beforeEach, afterAll } from 'vitest';
+import { existsSync, readdirSync, unlinkSync } from 'node:fs';
+import { join } from 'node:path';
+import { app, DATA_DIR } from '../src/index.js';
+
+/** Remove all .json files in DATA_DIR for test isolation */
+function cleanDataDir() {
+  if (!existsSync(DATA_DIR)) return;
+  for (const f of readdirSync(DATA_DIR).filter(f => f.endsWith('.json'))) {
+    unlinkSync(join(DATA_DIR, f));
+  }
+}
 
 describe('Fileverse Storage Service', () => {
   beforeEach(() => {
-    store.clear();
+    cleanDataDir();
+  });
+
+  afterAll(() => {
+    cleanDataDir();
   });
 
   it('should respond to health check', async () => {
@@ -24,8 +38,27 @@ describe('Fileverse Storage Service', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = await res.json() as { cid: string; storedAt: string };
+    const body = await res.json() as { cid: string; storedAt: number };
+    expect(body.cid).toMatch(/^bafk/);
     expect(body.storedAt).toBeDefined();
+  });
+
+  it('should produce deterministic CIDs for same content', async () => {
+    const res1 = await app.request('/store', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ciphertext: 'samecontent', iv: '1234' }),
+    });
+    const { cid: cid1 } = await res1.json() as { cid: string };
+
+    const res2 = await app.request('/store', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ciphertext: 'samecontent', iv: '5678' }),
+    });
+    const { cid: cid2 } = await res2.json() as { cid: string };
+
+    expect(cid1).toBe(cid2);
   });
 
   it('should reject store without ciphertext', async () => {
@@ -59,7 +92,7 @@ describe('Fileverse Storage Service', () => {
   });
 
   it('should list history entries', async () => {
-    // Store two entries
+    // Store two entries with different content
     await app.request('/store', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

@@ -2,7 +2,7 @@
  * Relay network types
  */
 
-import type { HexString } from './zk.js';
+import type { HexString, OnionLayer } from './zk.js';
 
 /** Relay node status */
 export enum RelayStatus {
@@ -19,6 +19,8 @@ export interface RelayNode {
   operator: HexString;
   /** HTTP endpoint for the relay */
   endpoint: string;
+  /** secp256k1 compressed public key for onion encryption (hex) */
+  publicKey: string;
   /** Onchain reputation score (0-100) */
   reputationScore: number;
   /** Current status */
@@ -37,25 +39,25 @@ export interface RoutingPath {
   createdAt: number;
 }
 
-/** Relay routing request (relay-to-relay) */
+/**
+ * Relay routing request (relay-to-relay).
+ * The relay receives an onion layer it can decrypt with its private key.
+ * Decrypting reveals the next hop URL + the inner onion payload.
+ */
 export interface RelayRequest {
-  /** Routing ID */
+  /** Routing ID (for correlation) */
   routingId: string;
-  /** Encrypted query blob (layered encryption, each relay peels one layer) */
-  encryptedBlob: string;
-  /** Index of this hop in the route (0, 1, 2) */
+  /** The onion-encrypted layer for this relay to peel */
+  onionLayer: OnionLayer;
+  /** Current hop index (0, 1, 2) */
   hopIndex: number;
-  /** Address of the next hop (or search backend if last) */
-  nextHop: string;
-  /** x402 payment proof for this relay */
-  paymentProof: string;
 }
 
 /** Relay routing response */
 export interface RelayResponse {
   /** Routing ID */
   routingId: string;
-  /** Encrypted result from the next hop (or search backend) */
+  /** Result returned from downstream (opaque to relay) */
   encryptedResult: string;
   /** Whether routing was successful */
   success: boolean;

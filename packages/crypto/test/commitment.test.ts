@@ -4,7 +4,6 @@ import {
   createQueryCommitment,
   verifyQueryCommitment,
   hashResults,
-  generateNullifier,
 } from '../src/commitment.js';
 
 describe('Query Commitment', () => {
@@ -67,29 +66,5 @@ describe('Hash Results', () => {
     const h1 = hashResults('{"results": [{"title": "a"}]}');
     const h2 = hashResults('{"results": [{"title": "b"}]}');
     expect(h1).not.toBe(h2);
-  });
-});
-
-describe('Nullifier Generation', () => {
-  it('should generate a valid nullifier', () => {
-    const identity = '0x' + 'aa'.repeat(32) as `0x${string}`;
-    const external = '0x' + 'bb'.repeat(32) as `0x${string}`;
-    const nullifier = generateNullifier(identity, external);
-    expect(nullifier).toMatch(/^0x[a-f0-9]{64}$/);
-  });
-
-  it('should be deterministic', () => {
-    const identity = '0x' + 'aa'.repeat(32) as `0x${string}`;
-    const external = '0x' + 'bb'.repeat(32) as `0x${string}`;
-    const n1 = generateNullifier(identity, external);
-    const n2 = generateNullifier(identity, external);
-    expect(n1).toBe(n2);
-  });
-
-  it('should differ for different identities', () => {
-    const id1 = '0x' + 'aa'.repeat(32) as `0x${string}`;
-    const id2 = '0x' + 'cc'.repeat(32) as `0x${string}`;
-    const external = '0x' + 'bb'.repeat(32) as `0x${string}`;
-    expect(generateNullifier(id1, external)).not.toBe(generateNullifier(id2, external));
   });
 });

@@ -7,14 +7,16 @@ async function getRelayNodes(): Promise<RelayNode[]> {
 
   const nodes: RelayNode[] = [];
   for (let i = 0; i < endpoints.length; i++) {
+    const url = endpoints[i].split('|')[0]; // Handle url|pubkey|ens format
     try {
-      const res = await fetch(`${endpoints[i]}/health`, { next: { revalidate: 10 } });
+      const res = await fetch(`${url}/health`, { next: { revalidate: 10 } });
       if (res.ok) {
-        const data = (await res.json()) as { ensName?: string; timestamp?: number };
+        const data = (await res.json()) as { ensName?: string; publicKey?: string; timestamp?: number };
         nodes.push({
           ensName: data.ensName || `relay${i + 1}.meshsearch.eth`,
           operator: `0x${'0'.repeat(38)}${(i + 1).toString().padStart(2, '0')}` as `0x${string}`,
-          endpoint: endpoints[i],
+          endpoint: url,
+          publicKey: data.publicKey || '',
           reputationScore: 50,
           status: 'active' as RelayStatus,
           lastActiveAt: data.timestamp || Date.now(),
@@ -24,7 +26,8 @@ async function getRelayNodes(): Promise<RelayNode[]> {
       nodes.push({
         ensName: `relay${i + 1}.meshsearch.eth`,
         operator: `0x${'0'.repeat(38)}${(i + 1).toString().padStart(2, '0')}` as `0x${string}`,
-        endpoint: endpoints[i],
+        endpoint: url,
+        publicKey: '',
         reputationScore: 0,
         status: 'inactive' as RelayStatus,
         lastActiveAt: 0,

@@ -9,3 +9,4 @@ coverage/
 cache/
 artifacts/
 typechain-types/
+.fileverse-data/

@@ -2,12 +2,12 @@
  * Search types
  */
 
-import type { HexString, ZKProof, EncryptedQueryBlob } from './zk.js';
+import type { HexString, EncryptedQueryBlob, SemaphoreProof } from './zk.js';
 
 /** Search request from client to MCP server */
 export interface SearchRequest {
-  /** ZK proof of authorization */
-  zkProof: ZKProof;
+  /** Semaphore ZK proof of authorization */
+  semaphoreProof: SemaphoreProof;
   /** Encrypted query blob (for relay routing to search backend) */
   encryptedQuery: EncryptedQueryBlob;
   /** Optional ENS name for subscription-tier access */
