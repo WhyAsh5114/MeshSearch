@@ -9,4 +9,6 @@ coverage/
 cache/
 artifacts/
 typechain-types/
+*.tsbuildinfo
 .fileverse-data/
+.fileverse-cache/
