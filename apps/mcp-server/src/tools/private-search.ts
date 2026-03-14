@@ -36,8 +36,13 @@ export function registerPrivateSearchTool(server: McpServer, config: ServerConfi
       query: z.string().describe('Search query'),
     },
     async (params) => {
+      const t0 = Date.now();
+      const log = (step: string) => console.error(`  \x1b[36m⟐\x1b[0m ${step} \x1b[2m+${Date.now() - t0}ms\x1b[0m`);
+      console.error(`\x1b[1m[private_search]\x1b[0m query="${params.query}"`);
+      try {
       // 1. Create query commitment (hides the query)
       const { commitment, salt } = createQueryCommitment(params.query);
+      log('commitment created');
 
       // 2. Generate real Semaphore ZK proof
       const identity = createIdentity(config.semaphoreSecret);
@@ -47,9 +52,11 @@ export function registerPrivateSearchTool(server: McpServer, config: ServerConfi
       // The "scope" prevents double-signaling within this scope
       const scope = `meshsearch-${Date.now()}`;
       const semaphoreProof = await generateSearchProof(identity, group, commitment, scope);
+      log('ZK proof generated');
 
       // 3. Verify the ZK proof (real Groth16 verification)
       const proofResult = await verifyZKProof(semaphoreProof);
+      log(`ZK proof verified: ${proofResult.valid}`);
       if (!proofResult.valid) {
         return {
           content: [{ type: 'text' as const, text: `ZK proof verification failed: ${proofResult.reason}` }],
@@ -73,14 +80,17 @@ export function registerPrivateSearchTool(server: McpServer, config: ServerConfi
 
       // 5. Record nullifier onchain
       await recordNullifier(nullifier, config.rpcUrl, config.contracts.nullifierRegistry);
+      log('nullifier recorded');
 
       // 6. Encrypt query with real secp256k1 ECDH + route through relays
       const encryptedQuery = await encryptQueryForBackend(params.query, config.backendPublicKey);
       const routingPath = await selectRelays(config);
+      log(`routing through ${routingPath.hops.map(h => h.ensName).join(' → ')}`);
 
       let searchResponse: SearchResponse;
       try {
         searchResponse = await routeQuery(encryptedQuery, routingPath, config);
+        log(`search complete: ${searchResponse.totalResults} results`);
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown error';
         return {
@@ -111,8 +121,9 @@ export function registerPrivateSearchTool(server: McpServer, config: ServerConfi
           config.fileverseApiUrl
         );
         storageCid = entry.cid;
+        log(`saved to fileverse: ${storageCid}`);
       } catch {
-        // Non-fatal: search still succeeded
+        log('fileverse save skipped (non-fatal)');
       }
 
       // 9. Return results
@@ -129,12 +140,21 @@ export function registerPrivateSearchTool(server: McpServer, config: ServerConfi
         storageCid ? `Stored: ${storageCid}` : null,
       ].filter(Boolean).join('\n');
 
+      log(`done — returning ${searchResponse.totalResults} results`);
       return {
         content: [{
           type: 'text' as const,
           text: `# Search Results\n\n${resultText}\n\n---\n**Metadata**\n${metadata}`,
         }],
       };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error('[private_search] Unhandled error:', message);
+        return {
+          content: [{ type: 'text' as const, text: `Search failed: ${message}` }],
+          isError: true,
+        };
+      }
     }
   );
 }

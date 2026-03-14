@@ -6,6 +6,13 @@
  * PaymentRequirements. Once paid, the facilitator verifies + settles.
  *
  * MCP tools never see payment parameters — it's all HTTP-level.
+ *
+ * Env vars:
+ *   X402_ENABLED          — 'true' to enable, 'false' to bypass (default: false)
+ *   X402_PAY_TO           — wallet address that receives payments
+ *   X402_SEARCH_PRICE     — price per search in USD, e.g. '$0.001' (default: $0.001)
+ *   X402_FACILITATOR_URL  — facilitator endpoint (default: https://x402.org/facilitator)
+ *   X402_NETWORK          — CAIP-2 chain ID (default: eip155:84532 = Base Sepolia)
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -15,7 +22,7 @@ import { registerExactEvmScheme } from '@x402/evm/exact/server';
 
 // ─── Configuration ──────────────────────────────────────────────────────────
 
-const BASE_SEPOLIA_NETWORK = 'eip155:84532';
+const NETWORK = process.env.X402_NETWORK ?? 'eip155:84532'; // Base Sepolia
 const FACILITATOR_URL = process.env.X402_FACILITATOR_URL ?? 'https://x402.org/facilitator';
 const PAY_TO = process.env.X402_PAY_TO ?? process.env.PAYMENT_SPLITTER_ADDRESS ?? '0x0000000000000000000000000000000000000000';
 const SEARCH_PRICE = process.env.X402_SEARCH_PRICE ?? '$0.001';
@@ -55,7 +62,7 @@ function buildRoutesConfig(): RoutesConfig {
     'POST /mcp': {
       accepts: {
         scheme: 'exact',
-        network: BASE_SEPOLIA_NETWORK,
+        network: NETWORK as `${string}:${string}`,
         payTo: PAY_TO,
         price: SEARCH_PRICE,
       },
@@ -103,15 +110,16 @@ export interface X402Result {
  * Call before the MCP transport; if blocked, write the 402 and short-circuit.
  */
 export async function processX402(req: IncomingMessage): Promise<X402Result> {
-  if (process.env.X402_ENABLED === 'false') {
+  if (process.env.X402_ENABLED !== 'true') {
     return { type: 'pass' };
   }
 
   let server: x402HTTPResourceServer;
   try {
     server = await getX402Server();
-  } catch {
-    // fail-open in dev so the server still works without a facilitator
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[x402] Server init failed (fail-open):', msg);
     return { type: 'pass' };
   }
 
@@ -127,19 +135,25 @@ export async function processX402(req: IncomingMessage): Promise<X402Result> {
     return { type: 'pass' };
   }
 
+  const hasPayment = !!adapter.getHeader('x-payment');
+  console.error(`[x402] Payment gate: hasPayment=${hasPayment} payTo=${PAY_TO} price=${SEARCH_PRICE} network=${NETWORK}`);
+
   const result: HTTPProcessResult = await server.processHTTPRequest(context);
 
   switch (result.type) {
     case 'no-payment-required':
+      console.error('[x402] No payment required for this request');
       return { type: 'pass' };
 
     case 'payment-verified': {
+      console.error('[x402] Payment verified — settling...');
       const settle = await server.processSettlement(
         result.paymentPayload,
         result.paymentRequirements,
         result.declaredExtensions,
       );
       if (settle.success) {
+        console.error(`[x402] Settlement success: tx=${settle.transaction} network=${settle.network}`);
         return { type: 'pass', settlementHeaders: settle.headers };
       }
       console.error('[x402] Settlement failed:', settle.errorReason);
@@ -147,6 +161,7 @@ export async function processX402(req: IncomingMessage): Promise<X402Result> {
     }
 
     case 'payment-error':
+      console.error(`[x402] Payment error — returning ${result.response.status}`);
       return {
         type: 'blocked',
         status: result.response.status,

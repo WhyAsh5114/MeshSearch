@@ -44,6 +44,24 @@ export async function verifyZKProof(proof: SemaphoreProof): Promise<{ valid: boo
   }
 }
 
+/** Create a provider that fails fast instead of retrying forever */
+function fastProvider(rpcUrl: string): ethers.JsonRpcProvider {
+  return new ethers.JsonRpcProvider(rpcUrl, undefined, {
+    staticNetwork: true,
+    batchMaxCount: 1,
+  });
+}
+
+/** Race a promise against a timeout */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label}: timed out after ${ms}ms (is the RPC node running?)`)), ms)
+    ),
+  ]);
+}
+
 /**
  * Check if a nullifier has been used — calls NullifierRegistry.isNullifierUsed() onchain.
  */
@@ -53,13 +71,18 @@ export async function checkNullifier(
   contractAddress: string
 ): Promise<boolean> {
   if (contractAddress === '0x0000000000000000000000000000000000000000') {
-    // No contract deployed — use in-memory fallback for local dev
     return usedNullifiers.has(nullifier);
   }
-  const provider = new ethers.JsonRpcProvider(rpcUrl);
-  const contract = new ethers.Contract(contractAddress, NULLIFIER_REGISTRY_ABI, provider);
-  const nullifierBytes32 = padToBytes32(nullifier);
-  return contract.isNullifierUsed(nullifierBytes32);
+  try {
+    const provider = fastProvider(rpcUrl);
+    const contract = new ethers.Contract(contractAddress, NULLIFIER_REGISTRY_ABI, provider);
+    const nullifierBytes32 = padToBytes32(nullifier);
+    return await withTimeout(contract.isNullifierUsed(nullifierBytes32), 5000, 'checkNullifier');
+  } catch {
+    // RPC unavailable — fall back to in-memory
+    console.error('[zk] checkNullifier: RPC unavailable, using in-memory fallback');
+    return usedNullifiers.has(nullifier);
+  }
 }
 
 /**
@@ -71,16 +94,20 @@ export async function recordNullifier(
   rpcUrl: string,
   contractAddress: string
 ): Promise<void> {
+  usedNullifiers.add(nullifier); // always record in-memory
   if (contractAddress === '0x0000000000000000000000000000000000000000') {
-    usedNullifiers.add(nullifier);
     return;
   }
-  const provider = new ethers.JsonRpcProvider(rpcUrl);
-  const signer = await provider.getSigner(0); // deployer (owner)
-  const contract = new ethers.Contract(contractAddress, NULLIFIER_REGISTRY_ABI, signer);
-  const nullifierBytes32 = padToBytes32(nullifier);
-  const tx = await contract.useNullifier(nullifierBytes32);
-  await tx.wait();
+  try {
+    const provider = fastProvider(rpcUrl);
+    const signer = await withTimeout(provider.getSigner(0), 5000, 'getSigner');
+    const contract = new ethers.Contract(contractAddress, NULLIFIER_REGISTRY_ABI, signer);
+    const nullifierBytes32 = padToBytes32(nullifier);
+    const tx = await withTimeout(contract.useNullifier(nullifierBytes32), 10000, 'useNullifier');
+    await withTimeout(tx.wait(), 10000, 'tx.wait');
+  } catch (err) {
+    console.error('[zk] recordNullifier: RPC unavailable, recorded in-memory only');
+  }
 }
 
 /**
@@ -95,13 +122,18 @@ export async function storeResultHashOnchain(
   const resultHash = hashResults(resultsJson);
 
   if (contractAddress !== '0x0000000000000000000000000000000000000000') {
-    const provider = new ethers.JsonRpcProvider(rpcUrl);
-    const signer = await provider.getSigner(0);
-    const contract = new ethers.Contract(contractAddress, NULLIFIER_REGISTRY_ABI, signer);
-    const commitmentBytes32 = padToBytes32(commitment);
-    const resultHashBytes32 = padToBytes32(resultHash);
-    const tx = await contract.storeResultHash(commitmentBytes32, resultHashBytes32);
-    await tx.wait();
+    try {
+      const provider = fastProvider(rpcUrl);
+      const signer = await withTimeout(provider.getSigner(0), 5000, 'getSigner');
+      const contract = new ethers.Contract(contractAddress, NULLIFIER_REGISTRY_ABI, signer);
+      const commitmentBytes32 = padToBytes32(commitment);
+      const resultHashBytes32 = padToBytes32(resultHash);
+      const tx = await withTimeout(contract.storeResultHash(commitmentBytes32, resultHashBytes32), 10000, 'storeResultHash');
+      await withTimeout(tx.wait(), 10000, 'tx.wait');
+    } catch {
+      console.error('[zk] storeResultHash: RPC unavailable, stored in-memory only');
+      resultHashStore.set(commitment, resultHash);
+    }
   } else {
     resultHashStore.set(commitment, resultHash);
   }
