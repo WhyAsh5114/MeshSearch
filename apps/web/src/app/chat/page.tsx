@@ -138,6 +138,9 @@ export default function ChatPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm">
+              <Link href="/mcp">MCP Inspector</Link>
+            </Button>
             <SettingsDialog />
             {isConnected ? (
               <div className="flex items-center gap-2">

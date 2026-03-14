@@ -82,6 +82,11 @@ export default function HomePage() {
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" className="px-3">
+              <Link href="/mcp" className="inline-flex items-center gap-1.5">
+                MCP Inspector
+              </Link>
+            </Button>
+            <Button variant="outline" size="sm" className="px-3">
               <Link href="/chat" className="inline-flex items-center gap-1.5">
                 Open Chat
                 <ArrowRight className="h-4 w-4" />
