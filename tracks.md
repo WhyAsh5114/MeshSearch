@@ -126,17 +126,17 @@ MeshSearch introduces a **micropayment incentive layer for decentralised search 
 
 ## BitGo — Privacy-Preserving Wallet Infrastructure
 
-MeshSearch uses BitGo wallets as the disbursement layer for relay operator payments. The integration is live on Holesky testnet with 4 self-custody MPC hot wallets.
+MeshSearch uses BitGo wallets as the disbursement layer for relay operator payments. The integration is live on Hoodi testnet with 4 self-custody MPC hot wallets.
 
 **How it qualifies:**
 - **Stealth-address pattern** — for every `private_search`, `generateFreshAddress()` is called on each relay operator's BitGo wallet. Each operator receives funds at a new, unlinkable address. An observer cannot correlate relay1's payment from search A with relay1's payment from search B.
-- **Self-custody MPC hot wallets** — all four wallets (treasury + 3 relay operators) use `walletVersion: 3` on the `hteth` (Holesky ETH) coin. Key material never leaves BitGo MPC; no single point of compromise.
+- **Self-custody MPC hot wallets** — all four wallets (treasury + 3 relay operators) use `walletVersion: 3` on the `hteth` (Hoodi Testnet ETH) coin. Key material never leaves BitGo MPC; no single point of compromise.
 - **BitGo Express** — local key management via `docker run bitgo/express:latest`. The MCP server communicates with Express at `http://localhost:3080` for transaction signing.
 - **Policy engine** — velocity limits and address whitelists applied server-side via `setupTreasuryPolicies()`. The treasury wallet cannot be drained even if the MCP server is compromised.
 - **Webhooks** — `POST /webhooks/bitgo` handler with HMAC-SHA256 signature validation (`x-signature-sha256` header). Confirmed disbursements create an immutable audit trail.
 - **Live browser UI** — the chat interface shows a pulsing **BitGo MPC** status badge in the header that polls `/health` every 15 seconds. Before payment, a card explains the stealth-address flow. After a successful search, a full disbursement visualisation shows `USDC → Treasury (0x…) → relay1.eth → 0xABC… | relay2.eth → 0xDEF… | relay3.eth → 0x789…` with fingerprint icons marking each fresh address. The actual stealth address generated for the search is shown when available.
 
-**Wallets (Holesky testnet):**
+**Wallets (Hoodi testnet):**
 
 | Wallet | ID prefix | Role |
 |---|---|---|

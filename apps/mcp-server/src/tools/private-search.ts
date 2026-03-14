@@ -143,6 +143,9 @@ export function registerPrivateSearchTool(server: McpServer, config: ServerConfi
         .map((r, i) => `${i + 1}. **${r.title}**\n   ${r.url}\n   ${r.snippet}`)
         .join('\n\n');
 
+      // Build Hoodi explorer URL for BitGo addresses
+      const hoodiExplorer = 'https://hoodi.etherscan.io/address';
+
       const metadata = [
         `Results: ${searchResponse.totalResults}`,
         `Search time: ${searchResponse.searchTimeMs}ms`,
@@ -150,7 +153,10 @@ export function registerPrivateSearchTool(server: McpServer, config: ServerConfi
         `Nullifier: ${nullifier.slice(0, 16)}...`,
         `Routing: ${routingPath.hops.map(h => h.ensName).join(' → ')}`,
         `Storage: saving in background`,
-        ...(bitgoReceiveAddress ? [`BitGo stealth address: ${bitgoReceiveAddress}`] : []),
+        ...(bitgoReceiveAddress ? [
+          `BitGo stealth address: ${bitgoReceiveAddress}`,
+          `BitGo address explorer: ${hoodiExplorer}/${bitgoReceiveAddress}`,
+        ] : []),
       ].join('\n');
 
       log(`done — returning ${searchResponse.totalResults} results`);

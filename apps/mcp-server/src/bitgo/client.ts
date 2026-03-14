@@ -15,7 +15,7 @@
  *   BITGO_ENV           — 'test' (default) or 'prod'
  *   BITGO_WALLET_ID     — treasury wallet ID for receiving search payments
  *   BITGO_WALLET_PASSPHRASE — wallet passphrase for signing transactions
- *   BITGO_COIN           — coin identifier (default: 'hteth' = Holesky ETH)
+ *   BITGO_COIN           — coin identifier (default: 'hteth' = Hoodi Testnet ETH)
  *   BITGO_EXPRESS_URL    — BitGo Express URL if running locally (optional)
  */
 
@@ -52,39 +52,61 @@ export function isBitGoEnabled(): boolean {
 // ─── Singleton client ───────────────────────────────────────────────────────
 
 let _sdk: BitGoAPI | null = null;
-let _wallet: Wallet | null = null;
+let _signingSDK: BitGoAPI | null = null;
+const _wallets = new Map<string, Wallet>();
 
+/**
+ * API SDK — connects directly to app.bitgo-test.com (or prod).
+ * Used for read operations and address creation; no Express required.
+ */
 function getSDK(config: BitGoConfig): BitGoAPI {
   if (_sdk) return _sdk;
 
-  const opts: ConstructorParameters<typeof BitGoAPI>[0] = {
+  _sdk = new BitGoAPI({
     accessToken: config.accessToken,
     env: config.env,
-  };
-
-  if (config.expressUrl) {
-    opts.customRootURI = config.expressUrl;
-  }
-
-  _sdk = new BitGoAPI(opts);
+  });
   _sdk.register('hteth', Hteth.createInstance);
 
-  console.error(`[bitgo] SDK initialized — env=${config.env} coin=${config.coin}`);
+  console.error(`[bitgo] SDK initialized — env=${config.env} coin=${config.coin} (direct API)`);
   return _sdk;
 }
 
 /**
- * Get (or lazily fetch) the configured BitGo wallet.
+ * Signing SDK — routes through BitGo Express for TSS wallet signing.
+ * Returns null if Express URL is not configured.
+ * Only needed for sendMany; address creation uses getSDK() directly.
+ */
+function getSigningSDK(config: BitGoConfig): BitGoAPI | null {
+  if (!config.expressUrl) return null;
+  if (_signingSDK) return _signingSDK;
+
+  _signingSDK = new BitGoAPI({
+    accessToken: config.accessToken,
+    env: config.env,
+    customRootURI: config.expressUrl,
+  });
+  _signingSDK.register('hteth', Hteth.createInstance);
+
+  console.error(`[bitgo] Signing SDK initialized — Express at ${config.expressUrl}`);
+  return _signingSDK;
+}
+
+/**
+ * Get (or lazily fetch) a BitGo wallet by its ID.
+ * Caches per walletId so treasury and relay wallets don't collide.
  */
 export async function getWallet(config: BitGoConfig): Promise<Wallet> {
-  if (_wallet) return _wallet;
+  const cached = _wallets.get(config.walletId);
+  if (cached) return cached;
 
   const sdk = getSDK(config);
   const coin = sdk.coin(config.coin);
-  _wallet = (await coin.wallets().get({ id: config.walletId })) as Wallet;
+  const wallet = (await coin.wallets().get({ id: config.walletId })) as Wallet;
+  _wallets.set(config.walletId, wallet);
 
-  console.error(`[bitgo] Wallet loaded: ${_wallet.label()} (${config.walletId.slice(0, 8)}…)`);
-  return _wallet;
+  console.error(`[bitgo] Wallet loaded: ${wallet.label()} (${config.walletId.slice(0, 8)}…)`);
+  return wallet;
 }
 
 /**
@@ -124,7 +146,23 @@ export async function sendTransaction(
   config: BitGoConfig,
   recipients: Array<{ address: string; amount: string }>,
 ): Promise<{ txid: string; status: string }> {
+  // For BitGo custodial wallets created via the dashboard, the passphrase
+  // decrypts the user key server-side — no local Express signing required.
   const wallet = await getWallet(config);
+  const balance = wallet.spendableBalanceString() ?? '0';
+  const totalNeeded = recipients.reduce((sum, r) => sum + BigInt(r.amount), 0n);
+
+  if (BigInt(balance) === 0n) {
+    throw new Error(
+      `[bitgo] Treasury wallet has 0 spendable balance on ${config.coin}. ` +
+      `Fund it via the BitGo dashboard or a Hoodi faucet before disbursing.`,
+    );
+  }
+  if (BigInt(balance) < totalNeeded) {
+    throw new Error(
+      `[bitgo] Insufficient balance: have ${balance} wei, need ${totalNeeded.toString()} wei`,
+    );
+  }
 
   const result = await wallet.sendMany({
     recipients,
@@ -161,5 +199,44 @@ export async function getWalletBalance(config: BitGoConfig): Promise<{
  */
 export function _resetBitGoClient(): void {
   _sdk = null;
-  _wallet = null;
+  _signingSDK = null;
+  _wallets.clear();
+}
+
+/**
+ * Live connectivity check — actually talks to BitGo API.
+ * Returns a structured status for the health endpoint.
+ */
+export async function probeBitGoHealth(config: BitGoConfig): Promise<{
+  api: boolean;
+  walletLabel: string | null;
+  balance: string | null;
+  expressReachable: boolean | null;
+  error: string | null;
+}> {
+  let api = false;
+  let walletLabel: string | null = null;
+  let balance: string | null = null;
+  let expressReachable: boolean | null = null;
+  let error: string | null = null;
+
+  try {
+    const wallet = await getWallet(config);
+    api = true;
+    walletLabel = wallet.label() ?? null;
+    balance = wallet.spendableBalanceString() ?? '0';
+  } catch (err) {
+    error = err instanceof Error ? err.message : String(err);
+  }
+
+  if (config.expressUrl) {
+    try {
+      const res = await fetch(`${config.expressUrl}/api/v2/ping`);
+      expressReachable = res.ok;
+    } catch {
+      expressReachable = false;
+    }
+  }
+
+  return { api, walletLabel, balance, expressReachable, error };
 }

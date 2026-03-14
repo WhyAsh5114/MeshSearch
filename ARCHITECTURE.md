@@ -324,7 +324,7 @@ RELAY3_BITGO_WALLET_ID=<relay 3 wallet>
 2. Create access token in account settings
 3. Run BitGo Express: `docker run -p 3080:3080 bitgo/express:latest`
 4. Create wallets via Express: `POST http://localhost:3080/api/v2/hteth/wallet/generate` with `{ "walletVersion": 3, "label": "...", "passphrase": "..." }` (walletVersion 3 is required for EVM TSS)
-5. Fund treasury from [Holesky faucet](https://holesky-faucet.pk910.de/)
+5. Fund treasury from a Hoodi faucet
 6. Set env vars and restart MCP server
 7. Or run `pnpm run:setup` and follow the Step 5c interactive BitGo prompts
 

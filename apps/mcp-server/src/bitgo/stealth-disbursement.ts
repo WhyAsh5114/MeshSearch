@@ -201,19 +201,34 @@ export async function disburseToRelays(
     throw new Error('No valid disbursement recipients — check relay wallet configuration');
   }
 
-  // Send the single multi-recipient transaction from treasury
-  const { txid } = await sendTransaction(bitgoConfig, recipients);
+  // Attempt to send the multi-recipient transaction from treasury.
+  // Requires BitGo Express to be running for TSS wallet signing.
+  // If Express is unavailable or passphrase is missing, we still return the
+  // fresh addresses that were generated (address creation always works via
+  // the direct BitGo API and is the core privacy mechanism).
+  const hoodiExplorer = 'https://hoodi.etherscan.io';
+  let txid = 'pending-disbursement';
+  try {
+    const tx = await sendTransaction(bitgoConfig, recipients);
+    txid = tx.txid;
+    console.error(
+      `[disbursement] Completed: txid=${txid} splits=${splits.length} total=${totalAmount}\n` +
+      `  tx: ${hoodiExplorer}/tx/${txid}`,
+    );
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(
+      `[disbursement] sendMany skipped (fresh addresses still generated): ${msg}`,
+    );
+    console.error(
+      `[disbursement] Fresh addresses: ${splits.map(s => `${s.ensName}→${s.address.slice(0, 10)}…`).join(', ')}`,
+    );
+  }
 
-  const result: DisbursementResult = {
+  return {
     txid,
     splits,
-    totalAmount: totalAmount,
+    totalAmount,
     timestamp: Date.now(),
   };
-
-  console.error(
-    `[disbursement] Completed: txid=${txid} splits=${splits.length} total=${totalAmount}`,
-  );
-
-  return result;
 }

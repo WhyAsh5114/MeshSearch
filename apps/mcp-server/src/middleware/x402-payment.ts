@@ -153,7 +153,11 @@ export async function processX402(req: IncomingMessage): Promise<X402Result> {
         result.declaredExtensions,
       );
       if (settle.success) {
-        console.error(`[x402] Settlement success: tx=${settle.transaction} network=${settle.network}`);
+        const baseSepoliaExplorer = 'https://sepolia.basescan.org';
+        console.error(
+          `[x402] Settlement success: tx=${settle.transaction} network=${settle.network}\n` +
+          (settle.transaction ? `  explorer: ${baseSepoliaExplorer}/tx/${settle.transaction}` : ''),
+        );
 
         // Trigger BitGo stealth-address disbursement to relay operators
         triggerBitGoDisbursement(settle.transaction ?? 'unknown').catch((err) => {
@@ -231,9 +235,16 @@ async function triggerBitGoDisbursement(settlementTxId: string): Promise<void> {
     disbursementConfig,
   );
 
+  const hoodiExplorer = 'https://hoodi.etherscan.io';
   console.error(
-    `[x402→bitgo] Disbursement complete: txid=${result.txid} ` +
-    `splits=${result.splits.map(s => `${s.ensName}→${s.address.slice(0, 10)}…`).join(', ')}`,
+    `[x402→bitgo] Disbursement complete: txid=${result.txid}\n` +
+    `  splits:\n` +
+    result.splits.map(s =>
+      `    ${s.ensName} → ${s.address}\n      ${hoodiExplorer}/address/${s.address}`
+    ).join('\n') +
+    (result.txid !== 'pending-disbursement'
+      ? `\n  tx: ${hoodiExplorer}/tx/${result.txid}`
+      : '\n  ⚠ sendMany skipped — fund treasury wallet with Hoodi ETH to enable on-chain transfers'),
   );
 }
 

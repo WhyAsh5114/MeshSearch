@@ -116,7 +116,7 @@ An on-chain observer cannot link two payments to the same relay operator — eac
 
 1. Create a test account at [app.bitgo-test.com](https://app.bitgo-test.com/signup)
 2. Run BitGo Express locally: `docker run -p 3080:3080 bitgo/express:latest`
-3. Create wallets and fund from [Holesky faucet](https://holesky-faucet.pk910.de/)
+3. Create wallets and fund from a Hoodi faucet
 4. Set env vars:
 
 ```env
@@ -320,7 +320,7 @@ MeshSearch/
 | **ZK** | Semaphore v4 — Groth16 proofs, Poseidon hashing |
 | **Crypto** | `@noble/curves` secp256k1 ECDH, `@noble/hashes` HKDF + AES-256-GCM |
 | **Payments** | x402 (`@x402/core`, `@x402/evm`), USDC on Base Sepolia |
-| **Wallets** | BitGo SDK (`bitgo`, `@bitgo/sdk-api`, `@bitgo/sdk-coin-eth`), self-custody MPC hot wallets, Holesky testnet |
+| **Wallets** | BitGo SDK (`bitgo`, `@bitgo/sdk-api`, `@bitgo/sdk-coin-eth`), self-custody MPC hot wallets, Hoodi testnet |
 | **Blockchain** | Solidity, Hardhat, ethers v6 |
 | **MCP** | `@modelcontextprotocol/sdk` — Streamable HTTP + stdio |
 | **Search** | SearXNG (self-hosted) |

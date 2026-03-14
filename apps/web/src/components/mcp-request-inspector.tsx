@@ -65,7 +65,7 @@ export function McpRequestInspector() {
   const [refreshing, setRefreshing] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [bitgoStatus, setBitgoStatus] = useState<"enabled" | "disabled" | "unknown">("unknown");
+  const [bitgoStatus, setBitgoStatus] = useState<"connected" | "error" | "disabled" | "unknown">("unknown");
 
   const fetchTraces = useCallback(async (showSpinner: boolean) => {
     if (showSpinner) setRefreshing(true);
@@ -105,7 +105,12 @@ export function McpRequestInspector() {
         const res = await fetch("/api/health", { cache: "no-store" });
         const data = await res.json();
         const status = typeof data.bitgo === "object" ? data.bitgo?.status : data.bitgo;
-        if (!cancelled) setBitgoStatus(status === "enabled" ? "enabled" : "disabled");
+        if (!cancelled) {
+          if (status === "connected") setBitgoStatus("connected");
+          else if (status === "error") setBitgoStatus("error");
+          else if (status === "disabled") setBitgoStatus("disabled");
+          else setBitgoStatus("unknown");
+        }
       } catch {
         if (!cancelled) setBitgoStatus("unknown");
       }
@@ -524,13 +529,15 @@ export function McpRequestInspector() {
             <RefreshCw className="h-3 w-3" /> live polling
           </Badge>
           <Badge
-            variant={bitgoStatus === "enabled" ? "default" : "outline"}
+            variant={bitgoStatus === "connected" ? "default" : "outline"}
             className={`gap-1 text-[10px] ${
-              bitgoStatus === "enabled"
+              bitgoStatus === "connected"
                 ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
-                : bitgoStatus === "disabled"
-                  ? "border-amber-500/40 bg-amber-500/10 text-amber-400"
-                  : ""
+                : bitgoStatus === "error"
+                  ? "border-red-500/40 bg-red-500/10 text-red-400"
+                  : bitgoStatus === "disabled"
+                    ? "border-amber-500/40 bg-amber-500/10 text-amber-400"
+                    : ""
             }`}
           >
             <Wallet className="h-3 w-3" />

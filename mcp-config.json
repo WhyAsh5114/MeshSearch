@@ -24,7 +24,7 @@
         "X402_NETWORK": "eip155:84532",
         "BITGO_ACCESS_TOKEN": "v2x8c9bc893f3e72fe2c5be8c25e239cedceb18d90628f084a91abf57eb1a5d2e19",
         "BITGO_WALLET_ID": "69b5a463af8d64faa63ba52a9379c2a2",
-        "BITGO_WALLET_PASSPHRASE": "",
+        "BITGO_WALLET_PASSPHRASE": "1234@ABCD",
         "BITGO_ENV": "test",
         "BITGO_COIN": "hteth",
         "BITGO_EXPRESS_URL": "http://localhost:3080",

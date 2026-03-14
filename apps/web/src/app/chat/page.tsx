@@ -225,13 +225,19 @@ export default function Home() {
 
         <div className="flex items-center gap-2">
           {/* BitGo status indicator */}
-          {bitgo.status === "enabled" && (
+          {bitgo.status === "connected" && (
             <Badge variant="outline" className="gap-1.5 text-[10px] border-emerald-500/40 text-emerald-400 bg-emerald-500/10">
               <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
               BitGo MPC
               <span className="text-muted-foreground">
                 {bitgo.coin.toUpperCase()}
               </span>
+            </Badge>
+          )}
+          {bitgo.status === "error" && (
+            <Badge variant="outline" className="gap-1.5 text-[10px] border-amber-500/40 text-amber-400 bg-amber-500/10">
+              <div className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+              BitGo Error
             </Badge>
           )}
           {bitgo.status === "disabled" && (
@@ -558,7 +564,7 @@ function ToolResultCard({
           <Badge variant="secondary" className="text-[10px] gap-1">
             <Zap className="h-2.5 w-2.5" /> USDC Settled
           </Badge>
-          {bitgo.status === "enabled" && (
+          {bitgo.status === "connected" && (
             <Badge className="text-[10px] gap-1 bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20">
               <Fingerprint className="h-2.5 w-2.5" /> BitGo Stealth
             </Badge>
@@ -611,6 +617,7 @@ type ParsedMetadata = {
   storageStatus?: string;
   historyLink?: string;
   bitgoStealthAddress?: string;
+  bitgoAddressExplorer?: string;
   nullifier?: string;
 };
 
@@ -657,6 +664,7 @@ function parseSearchResults(raw: string): {
       else if (clean.startsWith("Storage status:")) metadata.storageStatus = clean.replace("Storage status: ", "");
       else if (clean.startsWith("History link:")) metadata.historyLink = clean.replace("History link: ", "");
       else if (clean.startsWith("BitGo stealth address:")) metadata.bitgoStealthAddress = clean.replace("BitGo stealth address: ", "");
+      else if (clean.startsWith("BitGo address explorer:")) metadata.bitgoAddressExplorer = clean.replace("BitGo address explorer: ", "");
       else if (clean.startsWith("Nullifier:")) metadata.nullifier = clean.replace("Nullifier: ", "");
     }
   }
@@ -777,7 +785,7 @@ function StealthDisbursementCard({
   raw: string;
   bitgo: BitGoHealthInfo;
 }) {
-  if (bitgo.status !== "enabled") return null;
+  if (bitgo.status !== "connected") return null;
 
   const { metadata } = parseSearchResults(raw);
   const stealthAddress = metadata.bitgoStealthAddress;
@@ -857,12 +865,25 @@ function StealthDisbursementCard({
       {stealthAddress && (
         <div className="flex items-center gap-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-2">
           <Fingerprint className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="text-[10px] text-emerald-400 font-medium">Fresh Stealth Address Generated</p>
-            <p className="text-[10px] font-mono text-muted-foreground truncate">
+            <a
+              href={`https://hoodi.etherscan.io/address/${stealthAddress}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[10px] font-mono text-muted-foreground hover:text-emerald-400 truncate block transition-colors"
+            >
               {stealthAddress}
-            </p>
+            </a>
           </div>
+          <a
+            href={`https://hoodi.etherscan.io/address/${stealthAddress}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-emerald-400/60 hover:text-emerald-400 transition-colors shrink-0"
+          >
+            <ExternalLink className="h-3 w-3" />
+          </a>
         </div>
       )}
 
@@ -1056,7 +1077,7 @@ function PaymentCard({
           Searching for &ldquo;{query}&rdquo; requires a USDC micropayment on
           Base Sepolia. The payment is settled on-chain with no identity linked.
         </p>
-        {bitgo.status === "enabled" && (
+        {bitgo.status === "connected" && (
           <div className="flex items-center gap-2 rounded-md bg-emerald-500/[0.06] border border-emerald-500/20 px-2.5 py-1.5">
             <Fingerprint className="h-3 w-3 text-emerald-400 shrink-0" />
             <p className="text-[10px] text-emerald-400/90">

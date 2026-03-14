@@ -3,7 +3,19 @@ import { NextResponse } from "next/server";
 const MCP_URL = process.env.MCP_URL || "http://localhost:3038";
 
 export type BitGoHealthInfo =
-  | { status: "enabled"; env: string; coin: string; walletId: string; expressUrl: string | null; relayWallets: number }
+  | {
+      status: "connected";
+      env: string;
+      coin: string;
+      walletId: string;
+      walletLabel: string | null;
+      balance: string | null;
+      expressUrl: string | null;
+      expressReachable: boolean | null;
+      relayWallets: number;
+      error: string | null;
+    }
+  | { status: "error"; error: string | null; [key: string]: unknown }
   | { status: "disabled" }
   | { status: "unknown" };
 
