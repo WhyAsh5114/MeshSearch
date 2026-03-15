@@ -52,6 +52,13 @@ function fastProvider(rpcUrl: string): ethers.JsonRpcProvider {
   });
 }
 
+/** Build a Wallet signer from DEPLOYER_PRIVATE_KEY env var */
+function getDeployerSigner(provider: ethers.JsonRpcProvider): ethers.Wallet | null {
+  const key = process.env.DEPLOYER_PRIVATE_KEY;
+  if (!key) return null;
+  return new ethers.Wallet(key, provider);
+}
+
 /** Race a promise against a timeout */
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return Promise.race([
@@ -100,13 +107,19 @@ export async function recordNullifier(
   }
   try {
     const provider = fastProvider(rpcUrl);
-    const signer = await withTimeout(provider.getSigner(0), 5000, 'getSigner');
+    const signer = getDeployerSigner(provider);
+    if (!signer) {
+      console.error('[zk] recordNullifier: DEPLOYER_PRIVATE_KEY not set, recorded in-memory only');
+      return;
+    }
     const contract = new ethers.Contract(contractAddress, NULLIFIER_REGISTRY_ABI, signer);
     const nullifierBytes32 = padToBytes32(nullifier);
     const tx = await withTimeout(contract.useNullifier(nullifierBytes32), 10000, 'useNullifier');
-    await withTimeout(tx.wait(), 10000, 'tx.wait');
+    await withTimeout(tx.wait(), 15000, 'tx.wait');
+    console.error(`[zk] recordNullifier: recorded onchain (tx: ${tx.hash})`);
   } catch (err) {
-    console.error('[zk] recordNullifier: RPC unavailable, recorded in-memory only');
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[zk] recordNullifier: onchain write failed (${msg}), recorded in-memory only`);
   }
 }
 
@@ -124,14 +137,21 @@ export async function storeResultHashOnchain(
   if (contractAddress !== '0x0000000000000000000000000000000000000000') {
     try {
       const provider = fastProvider(rpcUrl);
-      const signer = await withTimeout(provider.getSigner(0), 5000, 'getSigner');
+      const signer = getDeployerSigner(provider);
+      if (!signer) {
+        console.error('[zk] storeResultHash: DEPLOYER_PRIVATE_KEY not set, stored in-memory only');
+        resultHashStore.set(commitment, resultHash);
+        return resultHash;
+      }
       const contract = new ethers.Contract(contractAddress, NULLIFIER_REGISTRY_ABI, signer);
       const commitmentBytes32 = padToBytes32(commitment);
       const resultHashBytes32 = padToBytes32(resultHash);
       const tx = await withTimeout(contract.storeResultHash(commitmentBytes32, resultHashBytes32), 10000, 'storeResultHash');
-      await withTimeout(tx.wait(), 10000, 'tx.wait');
-    } catch {
-      console.error('[zk] storeResultHash: RPC unavailable, stored in-memory only');
+      await withTimeout(tx.wait(), 15000, 'tx.wait');
+      console.error(`[zk] storeResultHash: stored onchain (tx: ${tx.hash})`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[zk] storeResultHash: onchain write failed (${msg}), stored in-memory only`);
       resultHashStore.set(commitment, resultHash);
     }
   } else {
