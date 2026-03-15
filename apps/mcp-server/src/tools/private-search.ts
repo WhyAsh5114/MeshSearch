@@ -27,6 +27,7 @@ import { verifyZKProof, checkNullifier, recordNullifier, storeResultHashOnchain 
 import { selectRelays, routeQuery } from '../relay/routing.js';
 import { saveSearchRecord } from '../fileverse/client.js';
 import { isBitGoEnabled, loadBitGoConfig, generateFreshAddress } from '../bitgo/client.js';
+import { disburseToRelays, loadDisbursementConfig, type DisbursementResult } from '../bitgo/stealth-disbursement.js';
 import type { ServerConfig } from '../config.js';
 
 export function registerPrivateSearchTool(server: McpServer, config: ServerConfig) {
@@ -108,19 +109,32 @@ export function registerPrivateSearchTool(server: McpServer, config: ServerConfi
         config.contracts.nullifierRegistry
       );
 
-      // 7b. BitGo stealth-address receipt (if enabled)
+      // 7b. BitGo stealth-address disbursement to relay operators (if enabled)
       let bitgoReceiveAddress: string | undefined;
+      let disbursement: DisbursementResult | undefined;
       if (isBitGoEnabled()) {
         try {
           const bitgoConfig = loadBitGoConfig();
+          const disbursementConfig = loadDisbursementConfig();
+
+          // Generate a fresh treasury receive address for this search payment
           const { address } = await generateFreshAddress(
             bitgoConfig,
             `search-${routingPath.routingId}`,
           );
           bitgoReceiveAddress = address;
-          log(`BitGo fresh address: ${address}`);
+          log(`BitGo treasury fresh address: ${address}`);
+
+          // Disburse to relay operators at fresh, unlinkable addresses
+          disbursement = await disburseToRelays(
+            '0', // amount placeholder — address generation is the privacy mechanism
+            routingPath.routingId,
+            bitgoConfig,
+            disbursementConfig,
+          );
+          log(`BitGo stealth disbursement: ${disbursement.splits.map(s => `${s.ensName}→${s.address.slice(0, 10)}…`).join(', ')}`);
         } catch (err) {
-          log(`BitGo address generation failed: ${err instanceof Error ? err.message : err}`);
+          log(`BitGo stealth disbursement failed: ${err instanceof Error ? err.message : err}`);
         }
       }
 
@@ -154,8 +168,14 @@ export function registerPrivateSearchTool(server: McpServer, config: ServerConfi
         `Routing: ${routingPath.hops.map(h => h.ensName).join(' → ')}`,
         `Storage: saving in background`,
         ...(bitgoReceiveAddress ? [
-          `BitGo stealth address: ${bitgoReceiveAddress}`,
-          `BitGo address explorer: ${hoodiExplorer}/${bitgoReceiveAddress}`,
+          `BitGo treasury address: ${bitgoReceiveAddress}`,
+          `BitGo treasury explorer: ${hoodiExplorer}/${bitgoReceiveAddress}`,
+        ] : []),
+        ...(disbursement ? disbursement.splits.map(s =>
+          `BitGo relay ${s.ensName}: ${s.address} (${hoodiExplorer}/${s.address})`
+        ) : []),
+        ...(disbursement ? [
+          `BitGo disbursement tx: ${disbursement.txid}`,
         ] : []),
       ].join('\n');
 
